@@ -103,9 +103,9 @@ print(gs.simulate(nodes, [
 2. 按各 Node 空闲数求当前最少跨 Node 数
 3. 在恰好该节点数的可行组合中打分，选最低分：
 
-\[
+$$
 score = 100\cdot(n_{nodes}-1) + 10\cdot n_{frag} + 5\cdot n_{awkward}
-\]
+$$
 
 - 跨 Node 通信代价：使用的节点数减一
 - 碎片项：放置后仍有剩余的部分占用 Node 数
