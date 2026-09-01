@@ -1,0 +1,11 @@
+{
+  "id": "cluster_4x8",
+  "name": "4 x 8 GPU 同构集群",
+  "description": "题目示例：四台 8 GPU 服务器，共 32 张 GPU。",
+  "nodes": [
+    {"id": "node-A", "gpu_count": 8},
+    {"id": "node-B", "gpu_count": 8},
+    {"id": "node-C", "gpu_count": 8},
+    {"id": "node-D", "gpu_count": 8}
+  ]
+}

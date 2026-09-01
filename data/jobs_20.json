@@ -1,0 +1,27 @@
+{
+  "id": "jobs_20",
+  "name": "20 个混合训练任务",
+  "description": "混合 1/2/4/8 卡请求，错开到达时间，覆盖资源争用、跨节点与碎片场景。",
+  "jobs": [
+    {"id": "job-01", "gpu_request": 8, "arrival_time": 0, "duration": 20},
+    {"id": "job-02", "gpu_request": 8, "arrival_time": 0, "duration": 15},
+    {"id": "job-03", "gpu_request": 4, "arrival_time": 1, "duration": 12},
+    {"id": "job-04", "gpu_request": 4, "arrival_time": 1, "duration": 10},
+    {"id": "job-05", "gpu_request": 2, "arrival_time": 2, "duration": 8},
+    {"id": "job-06", "gpu_request": 2, "arrival_time": 2, "duration": 8},
+    {"id": "job-07", "gpu_request": 8, "arrival_time": 3, "duration": 16},
+    {"id": "job-08", "gpu_request": 1, "arrival_time": 4, "duration": 6},
+    {"id": "job-09", "gpu_request": 1, "arrival_time": 4, "duration": 6},
+    {"id": "job-10", "gpu_request": 4, "arrival_time": 5, "duration": 14},
+    {"id": "job-11", "gpu_request": 8, "arrival_time": 6, "duration": 10},
+    {"id": "job-12", "gpu_request": 2, "arrival_time": 7, "duration": 9},
+    {"id": "job-13", "gpu_request": 4, "arrival_time": 8, "duration": 11},
+    {"id": "job-14", "gpu_request": 8, "arrival_time": 9, "duration": 12},
+    {"id": "job-15", "gpu_request": 1, "arrival_time": 10, "duration": 5},
+    {"id": "job-16", "gpu_request": 2, "arrival_time": 11, "duration": 7},
+    {"id": "job-17", "gpu_request": 4, "arrival_time": 12, "duration": 8},
+    {"id": "job-18", "gpu_request": 8, "arrival_time": 13, "duration": 15},
+    {"id": "job-19", "gpu_request": 2, "arrival_time": 14, "duration": 6},
+    {"id": "job-20", "gpu_request": 4, "arrival_time": 15, "duration": 10}
+  ]
+}

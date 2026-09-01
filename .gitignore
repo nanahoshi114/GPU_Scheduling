@@ -1,0 +1,13 @@
+build/
+compile_commands.json
+dist/
+*.egg-info/
+.pytest_cache/
+__pycache__/
+*.so
+*.dylib
+*.pyd
+.venv/
+venv/
+CMakeUserPresets.json
+.cache/

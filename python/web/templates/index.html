@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GPU 拓扑感知调度器</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>GPU 拓扑感知调度器</h1>
+      <p class="sub">C++ 核心算法 · pybind11 · 交互式模拟与策略对比</p>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="interactive">交互调度</button>
+      <button class="tab" data-tab="compare">策略对比</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="panel-interactive" class="panel">
+      <div class="grid-3">
+        <aside class="card">
+          <h2>集群定义</h2>
+          <label>预设
+            <select id="cluster-preset"></select>
+          </label>
+          <label>调度策略
+            <select id="strategy">
+              <option value="topology_aware">Topology-aware</option>
+              <option value="first_fit">First Fit</option>
+            </select>
+          </label>
+          <div id="node-editor" class="node-editor"></div>
+          <div class="row">
+            <button id="add-node" class="ghost">添加 Node</button>
+            <button id="create-session" class="primary">创建 / 重置会话</button>
+          </div>
+          <p class="hint">创建会话后即可提交任务。切换策略需重新创建。</p>
+        </aside>
+
+        <aside class="card">
+          <h2>提交任务</h2>
+          <label>任务 ID
+            <input id="job-id" placeholder="job-21" />
+          </label>
+          <label>申请 GPU 数
+            <input id="job-gpus" type="number" min="1" value="4" />
+          </label>
+          <label>运行时长（tick）
+            <input id="job-duration" type="number" min="1" value="10" />
+          </label>
+          <div class="row">
+            <button id="submit-job" class="primary">提交任务</button>
+            <button id="tick" class="ghost">时间 +1</button>
+          </div>
+          <p id="last-reason" class="reason"></p>
+        </aside>
+
+        <aside class="card metrics" id="metrics-card">
+          <h2>调度指标</h2>
+          <div class="metric-grid">
+            <div><span class="k">GPU 利用率</span><span id="m-util" class="v">—</span></div>
+            <div><span class="k">等待任务</span><span id="m-pending" class="v">—</span></div>
+            <div><span class="k">平均等待</span><span id="m-wait" class="v">—</span></div>
+            <div><span class="k">跨 Node 任务</span><span id="m-cross" class="v">—</span></div>
+            <div><span class="k">已用 / 总量</span><span id="m-used" class="v">—</span></div>
+            <div><span class="k">模拟时钟</span><span id="m-time" class="v">—</span></div>
+          </div>
+        </aside>
+      </div>
+
+      <section class="card">
+        <h2>Node / GPU 分配</h2>
+        <div id="cluster-view" class="cluster-view empty-msg">请先创建调度会话</div>
+      </section>
+
+      <section class="card">
+        <h2>任务与调度原因</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>任务</th>
+                <th>GPU</th>
+                <th>状态</th>
+                <th>节点 / GPU</th>
+                <th>等待</th>
+                <th>原因</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="job-table"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section id="panel-compare" class="panel hidden">
+      <div class="card">
+        <h2>同一组任务对比两种策略</h2>
+        <div class="row wrap">
+          <label>集群
+            <select id="cmp-cluster"></select>
+          </label>
+          <label>任务集
+            <select id="cmp-jobs"></select>
+          </label>
+          <button id="run-compare" class="primary">运行对比</button>
+        </div>
+        <p class="hint">使用同一集群配置与同一组任务分别运行 First Fit 与 Topology-aware，对比利用率、等待与跨节点通信。</p>
+      </div>
+      <div id="compare-result"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

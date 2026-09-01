@@ -1,0 +1,8 @@
+CompileFlags:
+  CompilationDatabase: build
+  Remove: [-flto, -flto=thin]
+  Add:
+    - -std=gnu++17
+    - -Icpp/include
+    - -isystem.venv/lib/python3.14/site-packages/pybind11/include
+    - -isystem/opt/homebrew/opt/python@3.14/Frameworks/Python.framework/Versions/3.14/include/python3.14

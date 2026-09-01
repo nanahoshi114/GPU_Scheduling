@@ -1,0 +1,13 @@
+{
+  "id": "cluster_mixed",
+  "name": "异构混合集群",
+  "description": "两台 8 GPU、两台 4 GPU、两台 8 GPU，共 40 张 GPU，用于验证异构容量下的跨节点决策。",
+  "nodes": [
+    {"id": "node-A", "gpu_count": 8},
+    {"id": "node-B", "gpu_count": 8},
+    {"id": "node-C", "gpu_count": 4},
+    {"id": "node-D", "gpu_count": 4},
+    {"id": "node-E", "gpu_count": 8},
+    {"id": "node-F", "gpu_count": 8}
+  ]
+}
