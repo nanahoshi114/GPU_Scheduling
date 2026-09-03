@@ -95,6 +95,39 @@ input, select {
 .row { display: flex; gap: 8px; align-items: end; }
 .row.wrap { flex-wrap: wrap; align-items: end; }
 
+label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+label.check input {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+.live-clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-2);
+  margin: 0;
+  font-size: 14px;
+}
+.live-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.live-m {
+  color: var(--muted);
+  font-size: 12px;
+  margin: -8px 0 10px;
+  font-variant-numeric: tabular-nums;
+}
+
 button {
   border: 0;
   border-radius: 10px;

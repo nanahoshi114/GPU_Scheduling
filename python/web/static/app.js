@@ -100,10 +100,10 @@ function renderMetrics(m, time) {
   $("#m-time").textContent = time;
 }
 
-function renderCluster(snapshot) {
-  const root = $("#cluster-view");
+function renderCluster(snapshot, root = $("#cluster-view"), emptyText = "请先创建调度会话") {
+  if (!root) return;
   if (!snapshot) {
-    root.textContent = "请先创建调度会话";
+    root.textContent = emptyText;
     return;
   }
   root.innerHTML = "";
@@ -126,13 +126,13 @@ function renderCluster(snapshot) {
   });
 }
 
-function renderJobs(snapshot) {
-  const tbody = $("#job-table");
+function renderJobs(snapshot, tbody = $("#job-table"), { interactive = true } = {}) {
+  if (!tbody) return;
   tbody.innerHTML = "";
   (snapshot?.jobs || []).forEach((job) => {
     const tr = document.createElement("tr");
     const finishBtn =
-      job.state === "running"
+      interactive && job.state === "running"
         ? `<button class="ghost tiny" data-finish="${job.id}">结束</button>`
         : "";
     tr.innerHTML = `
@@ -146,6 +146,7 @@ function renderJobs(snapshot) {
     `;
     tbody.appendChild(tr);
   });
+  if (!interactive) return;
   tbody.querySelectorAll("[data-finish]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       try {
@@ -229,6 +230,149 @@ function renderCompare(data) {
   `;
 }
 
+function snapshotAt(timeline, t, fallback) {
+  if (!timeline || timeline.length === 0) return fallback;
+  let last = timeline[0];
+  for (const snap of timeline) {
+    if (snap.time > t) break;
+    last = snap;
+  }
+  return last;
+}
+
+function liveLine(m) {
+  return `利用率 ${fmtPct(m.gpu_utilization)} · 等待 ${m.pending_count} · 跨节点 ${m.cross_node_jobs} · 已用 ${m.used_gpus}/${m.total_gpus}`;
+}
+
+function ensureLiveLayout(manual) {
+  $("#compare-result").innerHTML = `
+    <div class="live-controls">
+      <p id="cmp-clock" class="live-clock">准备播放...</p>
+      <button id="cmp-step-back" class="ghost" ${manual ? "" : "hidden"}>时间 -1</button>
+      <button id="cmp-step-fwd" class="ghost" ${manual ? "" : "hidden"}>时间 +1</button>
+    </div>
+    <div class="compare-grid">
+      <div class="card">
+        <h2>First Fit</h2>
+        <p id="cmp-ff-live-m" class="live-m"></p>
+        <div id="cmp-ff-cluster" class="cluster-view"></div>
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead>
+              <tr><th>任务</th><th>GPU</th><th>状态</th><th>节点 / GPU</th><th>等待</th><th>原因</th><th></th></tr>
+            </thead>
+            <tbody id="cmp-ff-jobs"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Topology-aware</h2>
+        <p id="cmp-ta-live-m" class="live-m"></p>
+        <div id="cmp-ta-cluster" class="cluster-view"></div>
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead>
+              <tr><th>任务</th><th>GPU</th><th>状态</th><th>节点 / GPU</th><th>等待</th><th>原因</th><th></th></tr>
+            </thead>
+            <tbody id="cmp-ta-jobs"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div id="cmp-summary"></div>
+  `;
+}
+
+function renderLiveFrame(data, t, makespan, { done = false, manual = false } = {}) {
+  const ff = snapshotAt(data.first_fit.timeline, t, data.first_fit.final_snapshot);
+  const ta = snapshotAt(data.topology_aware.timeline, t, data.topology_aware.final_snapshot);
+  let status;
+  if (done) status = "播放结束";
+  else if (manual) status = "手动";
+  else status = "自动播放";
+  const unit = manual ? "点「时间 +1」推进" : "每秒 1 tick";
+  $("#cmp-clock").textContent = `${status} · 模拟时间 t = ${t} / ${makespan}（${unit}）`;
+  $("#cmp-ff-live-m").textContent = liveLine(ff.metrics);
+  $("#cmp-ta-live-m").textContent = liveLine(ta.metrics);
+  renderCluster(ff, $("#cmp-ff-cluster"));
+  renderCluster(ta, $("#cmp-ta-cluster"));
+  renderJobs(ff, $("#cmp-ff-jobs"), { interactive: false });
+  renderJobs(ta, $("#cmp-ta-jobs"), { interactive: false });
+  const back = $("#cmp-step-back");
+  const fwd = $("#cmp-step-fwd");
+  if (back) back.disabled = t <= 0;
+  if (fwd) fwd.disabled = t >= makespan;
+}
+
+function showCompareSummary(data) {
+  $("#cmp-summary").innerHTML = `
+    <div class="compare-grid" style="margin-top:16px">
+      ${metricsBlock("First Fit 最终指标", data.first_fit.metrics, data.topology_aware.metrics)}
+      ${metricsBlock("Topology-aware 最终指标", data.topology_aware.metrics, data.first_fit.metrics)}
+    </div>
+  `;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+let comparePlay = { gen: 0, data: null, t: 0, makespan: 0, manual: false };
+
+function stopComparePlay() {
+  comparePlay.gen += 1;
+  comparePlay.manual = false;
+  $("#stop-compare").disabled = true;
+  $("#run-compare").disabled = false;
+}
+
+function stepCompare(delta) {
+  if (!comparePlay.manual || !comparePlay.data) return;
+  const max = comparePlay.makespan;
+  comparePlay.t = Math.max(0, Math.min(max, comparePlay.t + delta));
+  const done = comparePlay.t >= max;
+  renderLiveFrame(comparePlay.data, comparePlay.t, max, { done, manual: true });
+  if (done) showCompareSummary(comparePlay.data);
+  else $("#cmp-summary").innerHTML = "";
+}
+
+async function playCompare(data, { manual = false } = {}) {
+  const gen = ++comparePlay.gen;
+  const makespan = Math.max(
+    data.first_fit.metrics.makespan || 0,
+    data.topology_aware.metrics.makespan || 0
+  );
+  comparePlay.data = data;
+  comparePlay.t = 0;
+  comparePlay.makespan = makespan;
+  comparePlay.manual = manual;
+  ensureLiveLayout(manual);
+  $("#stop-compare").disabled = false;
+  $("#run-compare").disabled = true;
+
+  if (manual) {
+    $("#cmp-step-back").addEventListener("click", () => stepCompare(-1));
+    $("#cmp-step-fwd").addEventListener("click", () => stepCompare(1));
+    renderLiveFrame(data, 0, makespan, { manual: true });
+    $("#run-compare").disabled = false;
+    return;
+  }
+
+  for (let t = 0; t <= makespan; t++) {
+    if (gen !== comparePlay.gen) return;
+    comparePlay.t = t;
+    renderLiveFrame(data, t, makespan, { manual: false });
+    if (t < makespan) await sleep(1000);
+  }
+  if (gen !== comparePlay.gen) return;
+  renderLiveFrame(data, makespan, makespan, { done: true, manual: false });
+  showCompareSummary(data);
+  if (gen === comparePlay.gen) {
+    $("#stop-compare").disabled = true;
+    $("#run-compare").disabled = false;
+  }
+}
+
 $$(".tab").forEach((btn) => {
   btn.addEventListener("click", () => {
     $$(".tab").forEach((b) => b.classList.remove("active"));
@@ -288,8 +432,13 @@ $("#tick").addEventListener("click", async () => {
 
 $("#run-compare").addEventListener("click", async () => {
   const btn = $("#run-compare");
+  const visualize = Boolean($("#cmp-visualize") && $("#cmp-visualize").checked);
+  const manual = Boolean(visualize && $("#cmp-manual") && $("#cmp-manual").checked);
+  stopComparePlay();
   btn.disabled = true;
-  $("#compare-result").innerHTML = `<p class="hint">正在模拟...</p>`;
+  $("#compare-result").innerHTML = visualize
+    ? `<p class="hint">${manual ? "正在计算模拟结果，随后可手动逐步推进时间..." : "正在计算模拟结果，随后按 1 秒 / tick 并排播放 GPU 占用..."}</p>`
+    : `<p class="hint">正在模拟...</p>`;
   try {
     const data = await api("/api/compare", {
       method: "POST",
@@ -298,11 +447,29 @@ $("#run-compare").addEventListener("click", async () => {
         jobs_id: $("#cmp-jobs").value,
       }),
     });
-    renderCompare(data);
+    if (visualize) {
+      await playCompare(data, { manual });
+    } else {
+      renderCompare(data);
+      btn.disabled = false;
+    }
   } catch (err) {
     $("#compare-result").innerHTML = `<p class="reason">${err.message}</p>`;
-  } finally {
     btn.disabled = false;
+  }
+});
+
+$("#cmp-visualize").addEventListener("change", () => {
+  const on = $("#cmp-visualize").checked;
+  $("#cmp-manual").disabled = !on;
+  if (!on) $("#cmp-manual").checked = false;
+});
+
+$("#stop-compare").addEventListener("click", () => {
+  stopComparePlay();
+  const clock = $("#cmp-clock");
+  if (clock && !clock.textContent.includes("已停止")) {
+    clock.textContent = `已停止 · ${clock.textContent}`;
   }
 });
 

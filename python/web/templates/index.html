@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GPU 拓扑感知调度器</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=4" />
 </head>
 <body>
   <header class="top">
@@ -107,14 +107,23 @@
           <label>任务集
             <select id="cmp-jobs"></select>
           </label>
+          <label class="check">
+            <input type="checkbox" id="cmp-visualize" />
+            可视化实时模拟
+          </label>
+          <label class="check">
+            <input type="checkbox" id="cmp-manual" disabled />
+            手动推进时间
+          </label>
           <button id="run-compare" class="primary">运行对比</button>
+          <button id="stop-compare" class="ghost" disabled>停止</button>
         </div>
-        <p class="hint">使用同一集群配置与同一组任务分别运行 First Fit 与 Topology-aware，对比利用率、等待与跨节点通信。</p>
+        <p class="hint">使用同一集群与同一组任务分别运行 First Fit 与 Topology-aware。勾选可视化后<strong>再点「运行对比」</strong>。默认每秒前进 1 tick；勾选「手动推进时间」则用「时间 +1 / -1」单步查看，与交互调度相同。</p>
       </div>
       <div id="compare-result"></div>
     </section>
   </main>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=4"></script>
 </body>
 </html>
