@@ -10,9 +10,10 @@
 
 namespace {
 
-const int kWeightCross = 100;
-const int kWeightFrag = 10;
-const int kWeightAwkward = 5;
+// TopologyAware 打分权重：跨节点通信代价远高于碎片，优先少跨 Node。
+constexpr int kWeightCross = 100;
+constexpr int kWeightFrag = 10;
+constexpr int kWeightAwkward = 5;
 
 std::string join_node_ids(const std::vector<NodeAllocation>& allocs) {
     std::ostringstream oss;
@@ -29,6 +30,7 @@ bool is_awkward(int leftover) {
     return leftover == 3 || leftover == 5 || leftover == 6 || leftover == 7;
 }
 
+// score = 100*(跨节点数) + 10*(部分占用节点数) + 5*(余量落在 3/5/6/7 的节点数)
 int score_placement(const Cluster& cluster, const std::vector<NodeAllocation>& allocs) {
     const int n_nodes = static_cast<int>(allocs.size());
     const int cross = std::max(0, n_nodes - 1);
@@ -49,6 +51,7 @@ int score_placement(const Cluster& cluster, const std::vector<NodeAllocation>& a
     return kWeightCross * cross + kWeightFrag * n_frag + kWeightAwkward * n_awkward;
 }
 
+// 在已选定的节点集合内，按空闲 GPU 从多到少填充，尽量先填满大节点。
 Placement pack_largest_first(const Cluster& cluster, const std::vector<int>& node_indices,
                              int gpu_request) {
     struct Item {
@@ -106,6 +109,7 @@ class FirstFitStrategy : public PlacementStrategy {
 public:
     std::string name() const override { return "first_fit"; }
 
+    // 基础策略：按 Node 定义顺序从头拿走空闲 GPU。总量够就立刻放置，不优化跨节点。
     ScheduleResult try_place(const Cluster& cluster, int gpu_request,
                              bool /*has_running*/) const override {
         ScheduleResult result;
@@ -152,6 +156,8 @@ class TopologyAwareStrategy : public PlacementStrategy {
 public:
     std::string name() const override { return "topology_aware"; }
 
+    // 拓扑感知：先求当前最少跨 Node 数；若明显差于理想值且有任务在跑则等待；
+    // 否则在该节点数的组合中选碎片代价最低的放置。
     ScheduleResult try_place(const Cluster& cluster, int gpu_request,
                              bool has_running) const override {
         ScheduleResult result;
@@ -185,6 +191,7 @@ public:
         std::sort(candidates.begin(), candidates.end(),
                   [](const Cand& a, const Cand& b) { return a.free > b.free; });
 
+        // 贪心下界：用空闲最多的节点去覆盖请求，得到当前最少跨 Node 数。
         int covered = 0;
         int min_nodes = 0;
         for (const auto& c : candidates) {
@@ -202,8 +209,9 @@ public:
 
         const int max_cap = std::max(1, cluster.max_node_capacity());
         const int ideal_nodes =
-            (gpu_request + max_cap - 1) / max_cap;  // ceil
+            (gpu_request + max_cap - 1) / max_cap;  // ceil(G / 单 Node 容量)
 
+        // 碎片等待：现在必须拆到比理想更多的节点，且稍后可能释放出整机，则先不调度。
         if (min_nodes > ideal_nodes && has_running) {
             result.reason =
                 "资源碎片：当前最少需要跨 " + std::to_string(min_nodes) +
@@ -256,6 +264,7 @@ public:
             }
         };
 
+        // 枚举恰好 min_nodes 个节点的组合，打分后取最低分。
         foreach_combination(n, min_nodes, consider);
         if (!found) {
             // Fallback: greedy largest min_nodes.
@@ -347,6 +356,7 @@ ScheduleResult Scheduler::submit(const JobSpec& spec) {
         }
     }
 
+    // 按构造时选定的策略决定放置或等待（实现见本文件 FirstFit / TopologyAware）。
     auto placed = strategy_->try_place(cluster_, job.gpu_request, has_running);
     if (placed.success) {
         apply_placement(job, placed);

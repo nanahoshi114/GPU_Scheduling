@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+// 放置策略入口。核心算法在 cpp/src/scheduler.cpp：
+// FirstFitStrategy（顺序填空闲卡）与 TopologyAwareStrategy（少跨节点 + 碎片等待）。
 class PlacementStrategy {
 public:
     virtual ~PlacementStrategy() = default;
