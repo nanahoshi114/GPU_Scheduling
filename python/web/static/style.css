@@ -197,6 +197,7 @@ th { color: var(--muted); font-weight: 500; }
 }
 .badge.pending { background: rgba(255, 200, 87, 0.15); color: var(--warn); }
 .badge.running { background: rgba(62, 224, 196, 0.15); color: var(--accent); }
+.badge.preempted { background: rgba(255, 107, 122, 0.15); color: var(--danger); }
 .badge.finished { background: rgba(142, 160, 181, 0.15); color: var(--muted); }
 
 .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

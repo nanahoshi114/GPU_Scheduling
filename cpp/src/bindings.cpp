@@ -37,6 +37,8 @@ py::dict metrics_to_dict(const Metrics& m) {
     d["used_gpus"] = m.used_gpus;
     d["makespan"] = m.makespan;
     d["max_pending"] = m.max_pending;
+    d["total_preemptions"] = m.total_preemptions;
+    d["preempted_jobs"] = m.preempted_jobs;
     return d;
 }
 
@@ -46,10 +48,13 @@ py::dict job_to_dict(const JobView& j) {
     d["gpu_request"] = j.gpu_request;
     d["duration"] = j.duration;
     d["arrival_time"] = j.arrival_time;
+    d["priority"] = j.priority;
     d["state"] = j.state;
     d["start_time"] = j.start_time;
     d["finish_time"] = j.finish_time;
     d["wait_time"] = j.wait_time;
+    d["remaining_duration"] = j.remaining_duration;
+    d["preemption_count"] = j.preemption_count;
     d["placement"] = allocations_to_list(j.placement);
     d["reason"] = j.reason;
     d["nodes_used"] = j.nodes_used;
@@ -91,6 +96,7 @@ py::dict result_to_dict(const ScheduleResult& r) {
     d["success"] = r.success;
     d["reason"] = r.reason;
     d["placement"] = allocations_to_list(r.placement.allocations);
+    d["victims"] = r.victims;
     return d;
 }
 
@@ -139,6 +145,7 @@ JobSpec parse_job_spec(const py::dict& d, int default_arrival) {
     spec.gpu_request = d.contains("gpu_request") ? d["gpu_request"].cast<int>()
                                                  : d["gpus"].cast<int>();
     spec.duration = d.contains("duration") ? d["duration"].cast<int>() : 10;
+    spec.priority = d.contains("priority") ? d["priority"].cast<int>() : 0;
     if (d.contains("arrival_time")) {
         spec.arrival_time = d["arrival_time"].cast<int>();
     } else if (d.contains("arrival")) {
@@ -155,14 +162,16 @@ PYBIND11_MODULE(gpu_scheduler, m) {
     m.doc() = "GPU topology-aware scheduler core";
 
     py::class_<Scheduler>(m, "Scheduler")
-        .def(py::init([](py::object nodes, const std::string& strategy) {
-                 return Scheduler(parse_nodes(nodes), strategy);
+        .def(py::init([](py::object nodes, const std::string& strategy,
+                         bool enable_preemption) {
+                 return Scheduler(parse_nodes(nodes), strategy, enable_preemption);
              }),
-             py::arg("nodes"), py::arg("strategy") = "topology_aware")
+             py::arg("nodes"), py::arg("strategy") = "topology_aware",
+             py::arg("enable_preemption") = true)
         .def(
             "submit",
             [](Scheduler& self, py::object job_or_id, py::object gpu_request = py::none(),
-               int duration = 10, py::object arrival_time = py::none()) {
+               int duration = 10, py::object arrival_time = py::none(), int priority = 0) {
                 JobSpec spec;
                 if (py::isinstance<py::dict>(job_or_id)) {
                     spec = parse_job_spec(job_or_id.cast<py::dict>(), self.current_time());
@@ -173,30 +182,35 @@ PYBIND11_MODULE(gpu_scheduler, m) {
                     }
                     spec.gpu_request = gpu_request.cast<int>();
                     spec.duration = duration;
+                    spec.priority = priority;
                     spec.arrival_time =
                         arrival_time.is_none() ? self.current_time() : arrival_time.cast<int>();
                 }
                 return result_to_dict(self.submit(spec));
             },
             py::arg("job_or_id"), py::arg("gpu_request") = py::none(), py::arg("duration") = 10,
-            py::arg("arrival_time") = py::none())
+            py::arg("arrival_time") = py::none(), py::arg("priority") = 0)
         .def("finish", &Scheduler::finish, py::arg("job_id"))
         .def("tick", [](Scheduler& self) { return snapshot_to_dict(self.tick()); })
         .def("snapshot", [](const Scheduler& self) { return snapshot_to_dict(self.snapshot()); })
         .def("metrics", [](const Scheduler& self) { return metrics_to_dict(self.metrics()); })
         .def_property_readonly("time", &Scheduler::current_time)
-        .def_property_readonly("strategy", &Scheduler::strategy_name);
+        .def_property_readonly("strategy", &Scheduler::strategy_name)
+        .def_property_readonly("preemption_enabled", &Scheduler::preemption_enabled);
 
     m.def(
         "simulate",
-        [](py::object nodes, py::iterable jobs, const std::string& strategy) {
+        [](py::object nodes, py::iterable jobs, const std::string& strategy,
+           bool enable_preemption) {
             std::vector<JobSpec> specs;
             for (auto item : jobs) {
                 specs.push_back(parse_job_spec(item.cast<py::dict>(), 0));
             }
-            return simulation_to_dict(Simulator::run(parse_nodes(nodes), specs, strategy));
+            return simulation_to_dict(
+                Simulator::run(parse_nodes(nodes), specs, strategy, enable_preemption));
         },
-        py::arg("nodes"), py::arg("jobs"), py::arg("strategy"));
+        py::arg("nodes"), py::arg("jobs"), py::arg("strategy"),
+        py::arg("enable_preemption") = true);
 
     m.def("strategies", []() {
         py::list names;

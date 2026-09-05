@@ -157,3 +157,114 @@ def test_mixed_cluster_simulation_runs():
     assert result["metrics"]["finished_count"] + result["metrics"]["running_count"] + result[
         "metrics"
     ]["pending_count"] == 20
+
+
+@pytest.mark.parametrize("strategy", ["first_fit", "topology_aware"])
+def test_high_priority_job_preempts_minimum_number_of_victims(strategy):
+    sched = gs.Scheduler([("A", 8), ("B", 8)], strategy, True)
+    assert sched.submit("low-a", 8, duration=20, priority=1)["success"]
+    assert sched.submit("low-b", 4, duration=20, priority=1)["success"]
+    assert sched.submit("low-c", 4, duration=20, priority=1)["success"]
+
+    result = sched.submit("urgent", 8, duration=3, priority=10)
+
+    assert result["success"]
+    assert result["victims"] == ["low-a"]  # 一项 8 GPU，而不是两项 4 GPU
+    jobs = {job["id"]: job for job in sched.snapshot()["jobs"]}
+    assert jobs["urgent"]["state"] == "running"
+    assert jobs["low-a"]["state"] == "preempted"
+    assert jobs["low-a"]["preemption_count"] == 1
+    assert sched.metrics()["total_preemptions"] == 1
+
+
+def test_preemption_never_targets_equal_or_higher_priority():
+    sched = gs.Scheduler([("A", 8)], "first_fit", True)
+    assert sched.submit("protected", 8, duration=10, priority=10)["success"]
+
+    equal = sched.submit("equal", 8, duration=1, priority=10)
+    lower = sched.submit("lower", 8, duration=1, priority=5)
+
+    assert not equal["success"]
+    assert not lower["success"]
+    jobs = {job["id"]: job for job in sched.snapshot()["jobs"]}
+    assert jobs["protected"]["state"] == "running"
+    assert jobs["equal"]["state"] == "pending"
+    assert jobs["lower"]["state"] == "pending"
+    assert sched.metrics()["total_preemptions"] == 0
+
+
+def test_equal_size_victim_sets_prefer_lower_total_priority():
+    sched = gs.Scheduler([("A", 8)], "topology_aware", True)
+    sched.submit("more-important", 4, duration=10, priority=3)
+    sched.submit("cheaper", 4, duration=10, priority=1)
+
+    result = sched.submit("urgent", 4, duration=1, priority=10)
+
+    assert result["success"]
+    assert result["victims"] == ["cheaper"]
+    jobs = {job["id"]: job for job in sched.snapshot()["jobs"]}
+    assert jobs["more-important"]["state"] == "running"
+    assert jobs["cheaper"]["state"] == "preempted"
+
+
+def test_preemption_can_be_disabled():
+    sched = gs.Scheduler([("A", 8)], "first_fit", False)
+    sched.submit("low", 8, duration=10, priority=0)
+    result = sched.submit("urgent", 8, duration=1, priority=100)
+
+    assert not result["success"]
+    assert sched.snapshot()["jobs"][-1]["state"] == "pending"
+    assert sched.metrics()["total_preemptions"] == 0
+
+
+def test_preempted_job_resumes_remaining_duration_and_accumulates_wait():
+    sched = gs.Scheduler([("A", 8)], "topology_aware", True)
+    sched.submit("low", 8, duration=10, priority=1)
+    for _ in range(3):
+        sched.tick()
+
+    sched.submit("urgent", 8, duration=2, priority=10)
+    preempted = {job["id"]: job for job in sched.snapshot()["jobs"]}["low"]
+    assert preempted["state"] == "preempted"
+    assert preempted["remaining_duration"] == 7
+
+    sched.tick()
+    sched.tick()  # urgent 在 t=5 完成，low 恢复
+    resumed = {job["id"]: job for job in sched.snapshot()["jobs"]}["low"]
+    assert resumed["state"] == "running"
+    assert resumed["remaining_duration"] == 7
+    assert resumed["wait_time"] == 2
+
+    for _ in range(7):
+        sched.tick()
+    finished = {job["id"]: job for job in sched.snapshot()["jobs"]}["low"]
+    assert finished["state"] == "finished"
+    assert finished["finish_time"] == 12  # 运行 3 + 等待 2 + 继续运行 7
+
+
+def test_pending_queue_uses_priority_then_fifo():
+    sched = gs.Scheduler([("A", 8)], "first_fit", False)
+    sched.submit("blocker", 8, duration=10, priority=0)
+    sched.submit("low", 8, duration=1, priority=1)
+    sched.submit("high", 8, duration=1, priority=9)
+
+    assert sched.finish("blocker")
+    jobs = {job["id"]: job for job in sched.snapshot()["jobs"]}
+    assert jobs["high"]["state"] == "running"
+    assert jobs["low"]["state"] == "pending"
+
+
+def test_priority_workload_simulation_records_preemption_timeline():
+    cluster = load_json("cluster_4x8.json")
+    workload = load_json("jobs_priority.json")
+    result = gs.simulate(
+        nodes_from(cluster), workload["jobs"], "topology_aware", True
+    )
+
+    assert result["metrics"]["finished_count"] == len(workload["jobs"])
+    assert result["metrics"]["total_preemptions"] > 0
+    assert any(
+        job["state"] == "preempted"
+        for snapshot in result["timeline"]
+        for job in snapshot["jobs"]
+    )

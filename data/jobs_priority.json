@@ -1,0 +1,19 @@
+{
+  "id": "jobs_priority",
+  "name": "优先级与抢占演示任务",
+  "description": "低优先级长任务先占满集群，高优先级任务随后到达，用于观察最小受害者抢占、剩余时长恢复和优先级队列。",
+  "jobs": [
+    {"id": "low-a", "gpu_request": 8, "arrival_time": 0, "duration": 20, "priority": 1},
+    {"id": "low-b", "gpu_request": 8, "arrival_time": 0, "duration": 20, "priority": 1},
+    {"id": "low-c", "gpu_request": 8, "arrival_time": 0, "duration": 20, "priority": 1},
+    {"id": "low-d", "gpu_request": 8, "arrival_time": 0, "duration": 20, "priority": 1},
+    {"id": "urgent-8a", "gpu_request": 8, "arrival_time": 3, "duration": 4, "priority": 10},
+    {"id": "critical-4", "gpu_request": 4, "arrival_time": 5, "duration": 3, "priority": 20},
+    {"id": "urgent-8b", "gpu_request": 8, "arrival_time": 8, "duration": 5, "priority": 15},
+    {"id": "medium-4a", "gpu_request": 4, "arrival_time": 9, "duration": 6, "priority": 5},
+    {"id": "medium-4b", "gpu_request": 4, "arrival_time": 10, "duration": 6, "priority": 5},
+    {"id": "normal-2", "gpu_request": 2, "arrival_time": 11, "duration": 5, "priority": 0},
+    {"id": "critical-8", "gpu_request": 8, "arrival_time": 12, "duration": 3, "priority": 30},
+    {"id": "normal-4", "gpu_request": 4, "arrival_time": 13, "duration": 4, "priority": 0}
+  ]
+}

@@ -96,6 +96,7 @@ function renderMetrics(m, time) {
   $("#m-pending").textContent = m.pending_count;
   $("#m-wait").textContent = fmtNum(m.avg_wait_time);
   $("#m-cross").textContent = m.cross_node_jobs;
+  $("#m-preemptions").textContent = m.total_preemptions;
   $("#m-used").textContent = `${m.used_gpus} / ${m.total_gpus}`;
   $("#m-time").textContent = time;
 }
@@ -137,10 +138,13 @@ function renderJobs(snapshot, tbody = $("#job-table"), { interactive = true } = 
         : "";
     tr.innerHTML = `
       <td>${job.id}</td>
+      <td>P${job.priority}</td>
       <td>${job.gpu_request}</td>
       <td><span class="badge ${job.state}">${job.state}</span></td>
       <td>${placementText(job)}</td>
       <td>${fmtNum(job.wait_time)}</td>
+      <td>${job.remaining_duration}</td>
+      <td>${job.preemption_count}</td>
       <td class="reason-cell">${job.reason || ""}</td>
       <td>${finishBtn}</td>
     `;
@@ -176,6 +180,7 @@ function metricsBlock(title, m, other) {
     ["峰值等待任务", m.max_pending, "max_pending", false],
     ["平均等待时间", fmtNum(m.avg_wait_time), "avg_wait_time", false],
     ["跨 Node GPU 任务数", m.cross_node_jobs, "cross_node_jobs", false],
+    ["累计抢占次数", m.total_preemptions, "total_preemptions", false],
     ["Makespan", m.makespan, "makespan", false],
     ["已完成 / 运行中", `${m.finished_count} / ${m.running_count}`, null, null],
   ];
@@ -201,16 +206,19 @@ function jobTable(jobs) {
     .map(
       (j) => `<tr>
         <td>${j.id}</td>
+        <td>P${j.priority}</td>
         <td>${j.gpu_request}</td>
         <td><span class="badge ${j.state}">${j.state}</span></td>
         <td>${j.nodes_used}</td>
         <td>${placementText(j)}</td>
+        <td>${j.remaining_duration}</td>
+        <td>${j.preemption_count}</td>
         <td class="reason-cell">${j.reason || ""}</td>
       </tr>`
     )
     .join("");
   return `<div class="table-wrap"><table>
-    <thead><tr><th>任务</th><th>GPU</th><th>状态</th><th>跨节点数</th><th>分配</th><th>原因</th></tr></thead>
+    <thead><tr><th>任务</th><th>优先级</th><th>GPU</th><th>状态</th><th>跨节点数</th><th>分配</th><th>剩余</th><th>抢占次数</th><th>原因</th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
 }
@@ -241,7 +249,7 @@ function snapshotAt(timeline, t, fallback) {
 }
 
 function liveLine(m) {
-  return `利用率 ${fmtPct(m.gpu_utilization)} · 等待 ${m.pending_count} · 跨节点 ${m.cross_node_jobs} · 已用 ${m.used_gpus}/${m.total_gpus}`;
+  return `利用率 ${fmtPct(m.gpu_utilization)} · 等待 ${m.pending_count} · 跨节点 ${m.cross_node_jobs} · 抢占 ${m.total_preemptions} · 已用 ${m.used_gpus}/${m.total_gpus}`;
 }
 
 function ensureLiveLayout(manual) {
@@ -259,7 +267,7 @@ function ensureLiveLayout(manual) {
         <div class="table-wrap" style="margin-top:12px">
           <table>
             <thead>
-              <tr><th>任务</th><th>GPU</th><th>状态</th><th>节点 / GPU</th><th>等待</th><th>原因</th><th></th></tr>
+              <tr><th>任务</th><th>优先级</th><th>GPU</th><th>状态</th><th>节点 / GPU</th><th>等待</th><th>剩余</th><th>抢占次数</th><th>原因</th><th></th></tr>
             </thead>
             <tbody id="cmp-ff-jobs"></tbody>
           </table>
@@ -272,7 +280,7 @@ function ensureLiveLayout(manual) {
         <div class="table-wrap" style="margin-top:12px">
           <table>
             <thead>
-              <tr><th>任务</th><th>GPU</th><th>状态</th><th>节点 / GPU</th><th>等待</th><th>原因</th><th></th></tr>
+              <tr><th>任务</th><th>优先级</th><th>GPU</th><th>状态</th><th>节点 / GPU</th><th>等待</th><th>剩余</th><th>抢占次数</th><th>原因</th><th></th></tr>
             </thead>
             <tbody id="cmp-ta-jobs"></tbody>
           </table>
@@ -396,6 +404,7 @@ $("#create-session").addEventListener("click", async () => {
       body: JSON.stringify({
         nodes: nodeRows,
         strategy: $("#strategy").value,
+        enable_preemption: $("#enable-preemption").checked,
       }),
     });
     $("#last-reason").textContent = `会话已创建，策略 ${snap.strategy}`;
@@ -411,6 +420,7 @@ $("#submit-job").addEventListener("click", async () => {
       id: $("#job-id").value.trim() || `job-${Date.now()}`,
       gpu_request: Number($("#job-gpus").value),
       duration: Number($("#job-duration").value),
+      priority: Number($("#job-priority").value),
     };
     const data = await api("/api/jobs", { method: "POST", body: JSON.stringify(payload) });
     $("#last-reason").textContent = data.result.reason;
@@ -445,6 +455,7 @@ $("#run-compare").addEventListener("click", async () => {
       body: JSON.stringify({
         cluster_id: $("#cmp-cluster").value,
         jobs_id: $("#cmp-jobs").value,
+        enable_preemption: $("#cmp-preemption").checked,
       }),
     });
     if (visualize) {

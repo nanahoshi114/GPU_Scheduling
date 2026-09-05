@@ -5,6 +5,7 @@ class Scheduler:
         self,
         nodes: Sequence[tuple[str, int] | Mapping[str, Any]],
         strategy: str = "topology_aware",
+        enable_preemption: bool = True,
     ) -> None: ...
     def submit(
         self,
@@ -12,6 +13,7 @@ class Scheduler:
         gpu_request: int | None = None,
         duration: int = 10,
         arrival_time: int | None = None,
+        priority: int = 0,
     ) -> dict[str, Any]: ...
     def finish(self, job_id: str) -> bool: ...
     def tick(self) -> dict[str, Any]: ...
@@ -21,10 +23,13 @@ class Scheduler:
     def time(self) -> int: ...
     @property
     def strategy(self) -> str: ...
+    @property
+    def preemption_enabled(self) -> bool: ...
 
 def simulate(
     nodes: Sequence[tuple[str, int] | Mapping[str, Any]],
     jobs: Iterable[Mapping[str, Any]],
     strategy: str,
+    enable_preemption: bool = True,
 ) -> dict[str, Any]: ...
 def strategies() -> list[str]: ...

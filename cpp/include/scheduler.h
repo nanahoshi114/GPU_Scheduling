@@ -21,7 +21,8 @@ std::unique_ptr<PlacementStrategy> make_strategy(const std::string& name);
 
 class Scheduler {
 public:
-    Scheduler(std::vector<std::pair<std::string, int>> nodes, const std::string& strategy);
+    Scheduler(std::vector<std::pair<std::string, int>> nodes, const std::string& strategy,
+              bool enable_preemption = true);
 
     ScheduleResult submit(const JobSpec& spec);
     bool finish(const std::string& job_id);
@@ -36,6 +37,7 @@ public:
     int used_gpus() const { return cluster_.used_gpus(); }
     int total_gpus() const { return cluster_.total_gpus(); }
     const std::string& strategy_name() const { return strategy_name_; }
+    bool preemption_enabled() const { return enable_preemption_; }
     const std::vector<Job>& jobs() const { return jobs_; }
 
     void schedule_pending();
@@ -47,8 +49,13 @@ private:
     std::vector<Job> jobs_;
     int time_ = 0;
     int max_pending_ = 0;
+    bool enable_preemption_ = true;
 
     JobView to_view(const Job& job) const;
     void apply_placement(Job& job, const ScheduleResult& result);
+    ScheduleResult try_schedule_job(Job& job);
+    ScheduleResult find_preemption_plan(const Job& incoming) const;
+    void preempt_victims(const Job& incoming, const std::vector<std::string>& victim_ids);
+    bool has_running_jobs(const std::vector<std::string>& excluded = {}) const;
     void update_max_pending();
 };

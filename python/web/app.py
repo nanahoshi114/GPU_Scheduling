@@ -56,12 +56,14 @@ class NodeSpec(BaseModel):
 class SessionRequest(BaseModel):
     nodes: list[NodeSpec]
     strategy: str = "topology_aware"
+    enable_preemption: bool = True
 
 
 class JobRequest(BaseModel):
     id: str
     gpu_request: int = Field(gt=0)
     duration: int = Field(default=10, gt=0)
+    priority: int = Field(default=0, ge=0)
 
 
 class CompareRequest(BaseModel):
@@ -69,6 +71,7 @@ class CompareRequest(BaseModel):
     cluster_id: Optional[str] = None
     jobs: Optional[list[dict[str, Any]]] = None
     jobs_id: Optional[str] = None
+    enable_preemption: bool = True
 
 
 def _cluster_nodes(req: CompareRequest) -> list[tuple[str, int]]:
@@ -114,7 +117,7 @@ def api_session(req: SessionRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="至少定义一个 Node")
     nodes = [(n.id, n.gpu_count) for n in req.nodes]
     try:
-        sched = gs.Scheduler(nodes, req.strategy)
+        sched = gs.Scheduler(nodes, req.strategy, req.enable_preemption)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     with _lock:
@@ -133,7 +136,9 @@ def api_snapshot() -> dict[str, Any]:
 def api_submit(req: JobRequest) -> dict[str, Any]:
     with _lock:
         sched = _require_scheduler()
-        result = sched.submit(req.id, req.gpu_request, duration=req.duration)
+        result = sched.submit(
+            req.id, req.gpu_request, duration=req.duration, priority=req.priority
+        )
         return {"result": result, "snapshot": sched.snapshot()}
 
 
@@ -158,8 +163,8 @@ def api_compare(req: CompareRequest) -> dict[str, Any]:
     nodes = _cluster_nodes(req)
     jobs = _job_list(req)
     try:
-        ff = gs.simulate(nodes, jobs, "first_fit")
-        ta = gs.simulate(nodes, jobs, "topology_aware")
+        ff = gs.simulate(nodes, jobs, "first_fit", req.enable_preemption)
+        ta = gs.simulate(nodes, jobs, "topology_aware", req.enable_preemption)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"first_fit": ff, "topology_aware": ta}

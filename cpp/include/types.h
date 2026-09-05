@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-enum class JobState { Pending, Running, Finished };
+enum class JobState { Pending, Running, Preempted, Finished };
 
 struct Gpu {
     int index = 0;
@@ -30,6 +30,7 @@ struct JobSpec {
     int gpu_request = 0;
     int duration = 10;
     int arrival_time = 0;
+    int priority = 0;
 };
 
 struct Job {
@@ -37,18 +38,23 @@ struct Job {
     int gpu_request = 0;
     int arrival_time = 0;
     int duration = 10;
+    int priority = 0;
     JobState state = JobState::Pending;
     Placement placement;
     std::string reason;
     int start_time = -1;
     int finish_time = -1;
     int wait_time = 0;
+    int remaining_duration = 0;
+    int pending_since = 0;
+    int preemption_count = 0;
 };
 
 struct ScheduleResult {
     bool success = false;
     Placement placement;
     std::string reason;
+    std::vector<std::string> victims;
 };
 
 struct GpuView {
@@ -68,10 +74,13 @@ struct JobView {
     int gpu_request = 0;
     int duration = 0;
     int arrival_time = 0;
+    int priority = 0;
     std::string state;
     int start_time = -1;
     int finish_time = -1;
     int wait_time = 0;
+    int remaining_duration = 0;
+    int preemption_count = 0;
     std::vector<NodeAllocation> placement;
     std::string reason;
     int nodes_used = 0;
@@ -89,6 +98,8 @@ struct Metrics {
     int used_gpus = 0;
     int makespan = 0;
     int max_pending = 0;
+    int total_preemptions = 0;
+    int preempted_jobs = 0;
 };
 
 struct Snapshot {

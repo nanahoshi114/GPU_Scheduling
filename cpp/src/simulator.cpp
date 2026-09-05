@@ -7,13 +7,17 @@
 
 SimulationResult Simulator::run(std::vector<std::pair<std::string, int>> nodes,
                                 const std::vector<JobSpec>& jobs,
-                                const std::string& strategy) {
-    Scheduler sched(std::move(nodes), strategy);
+                                const std::string& strategy,
+                                bool enable_preemption) {
+    Scheduler sched(std::move(nodes), strategy, enable_preemption);
 
     std::vector<JobSpec> remaining = jobs;
     std::sort(remaining.begin(), remaining.end(), [](const JobSpec& a, const JobSpec& b) {
         if (a.arrival_time != b.arrival_time) {
             return a.arrival_time < b.arrival_time;
+        }
+        if (a.priority != b.priority) {
+            return a.priority > b.priority;
         }
         return a.id < b.id;
     });
@@ -30,7 +34,7 @@ SimulationResult Simulator::run(std::vector<std::pair<std::string, int>> nodes,
         int t = kInf;
         for (const auto& job : sched.jobs()) {
             if (job.state == JobState::Running && job.start_time >= 0) {
-                t = std::min(t, job.start_time + job.duration);
+                t = std::min(t, job.start_time + job.remaining_duration);
             }
         }
         return t;
@@ -70,7 +74,7 @@ SimulationResult Simulator::run(std::vector<std::pair<std::string, int>> nodes,
             std::vector<std::string> due;
             for (const auto& job : sched.jobs()) {
                 if (job.state == JobState::Running && job.start_time >= 0 &&
-                    job.start_time + job.duration <= time) {
+                    job.start_time + job.remaining_duration <= time) {
                     due.push_back(job.id);
                 }
             }
