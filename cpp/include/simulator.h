@@ -11,5 +11,6 @@ public:
     static SimulationResult run(std::vector<std::pair<std::string, int>> nodes,
                                 const std::vector<JobSpec>& jobs,
                                 const std::string& strategy,
-                                bool enable_preemption = true);
+                                bool enable_preemption = true,
+                                std::vector<QueueSpec> queues = {});
 };

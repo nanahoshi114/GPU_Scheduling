@@ -22,7 +22,7 @@ std::unique_ptr<PlacementStrategy> make_strategy(const std::string& name);
 class Scheduler {
 public:
     Scheduler(std::vector<std::pair<std::string, int>> nodes, const std::string& strategy,
-              bool enable_preemption = true);
+              bool enable_preemption = true, std::vector<QueueSpec> queues = {});
 
     ScheduleResult submit(const JobSpec& spec);
     bool finish(const std::string& job_id);
@@ -39,6 +39,7 @@ public:
     const std::string& strategy_name() const { return strategy_name_; }
     bool preemption_enabled() const { return enable_preemption_; }
     const std::vector<Job>& jobs() const { return jobs_; }
+    const std::vector<QueueSpec>& queues() const { return queues_; }
 
     void schedule_pending();
 
@@ -47,6 +48,7 @@ private:
     std::unique_ptr<PlacementStrategy> strategy_;
     std::string strategy_name_;
     std::vector<Job> jobs_;
+    std::vector<QueueSpec> queues_;
     int time_ = 0;
     int max_pending_ = 0;
     bool enable_preemption_ = true;
@@ -58,4 +60,9 @@ private:
     void preempt_victims(const Job& incoming, const std::vector<std::string>& victim_ids);
     bool has_running_jobs(const std::vector<std::string>& excluded = {}) const;
     void update_max_pending();
+    const QueueSpec* find_queue(const std::string& queue_id) const;
+    int queue_used_gpus(const std::string& queue_id,
+                        const std::vector<std::string>& excluded = {}) const;
+    bool is_fair_share_reason(const std::string& reason) const;
+    std::vector<QueueView> queue_views() const;
 };

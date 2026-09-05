@@ -1,0 +1,20 @@
+{
+  "id": "jobs_quota",
+  "name": "多租户 Queue / Quota 演示",
+  "description": "research 16 / prod 12 / default 4。research 先占满配额后继续提交，观察 fair-share delay（集群仍有空闲卡）；同队列可抢占，跨队列不能抢。",
+  "queues": [
+    {"id": "research", "gpu_quota": 16},
+    {"id": "prod", "gpu_quota": 12},
+    {"id": "default", "gpu_quota": 4}
+  ],
+  "jobs": [
+    {"id": "res-a", "gpu_request": 8, "arrival_time": 0, "duration": 20, "priority": 1, "queue_id": "research"},
+    {"id": "res-b", "gpu_request": 8, "arrival_time": 0, "duration": 20, "priority": 1, "queue_id": "research"},
+    {"id": "res-extra", "gpu_request": 8, "arrival_time": 2, "duration": 8, "priority": 1, "queue_id": "research"},
+    {"id": "prod-a", "gpu_request": 8, "arrival_time": 2, "duration": 12, "priority": 1, "queue_id": "prod"},
+    {"id": "prod-b", "gpu_request": 4, "arrival_time": 3, "duration": 10, "priority": 1, "queue_id": "prod"},
+    {"id": "res-urgent", "gpu_request": 8, "arrival_time": 4, "duration": 3, "priority": 20, "queue_id": "research"},
+    {"id": "prod-urgent", "gpu_request": 8, "arrival_time": 5, "duration": 3, "priority": 30, "queue_id": "prod"},
+    {"id": "default-small", "gpu_request": 2, "arrival_time": 6, "duration": 5, "priority": 0, "queue_id": "default"}
+  ]
+}

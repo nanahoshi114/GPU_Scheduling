@@ -39,6 +39,8 @@ py::dict metrics_to_dict(const Metrics& m) {
     d["max_pending"] = m.max_pending;
     d["total_preemptions"] = m.total_preemptions;
     d["preempted_jobs"] = m.preempted_jobs;
+    d["fair_share_pending"] = m.fair_share_pending;
+    d["fragmentation_pending"] = m.fragmentation_pending;
     return d;
 }
 
@@ -49,6 +51,7 @@ py::dict job_to_dict(const JobView& j) {
     d["duration"] = j.duration;
     d["arrival_time"] = j.arrival_time;
     d["priority"] = j.priority;
+    d["queue_id"] = j.queue_id;
     d["state"] = j.state;
     d["start_time"] = j.start_time;
     d["finish_time"] = j.finish_time;
@@ -87,6 +90,17 @@ py::dict snapshot_to_dict(const Snapshot& s) {
         jobs.append(job_to_dict(j));
     }
     d["jobs"] = jobs;
+    py::list queues;
+    for (const auto& q : s.queues) {
+        py::dict qd;
+        qd["id"] = q.id;
+        qd["gpu_quota"] = q.gpu_quota;
+        qd["used_gpus"] = q.used_gpus;
+        qd["pending_count"] = q.pending_count;
+        qd["running_count"] = q.running_count;
+        queues.append(qd);
+    }
+    d["queues"] = queues;
     d["metrics"] = metrics_to_dict(s.metrics);
     return d;
 }
@@ -139,6 +153,36 @@ std::vector<std::pair<std::string, int>> parse_nodes(const py::object& nodes) {
     return out;
 }
 
+std::vector<QueueSpec> parse_queues(const py::object& queues) {
+    std::vector<QueueSpec> out;
+    if (queues.is_none()) {
+        return out;
+    }
+    for (auto item : queues) {
+        py::handle h = item;
+        QueueSpec spec;
+        if (py::isinstance<py::dict>(h)) {
+            auto d = h.cast<py::dict>();
+            if (d.contains("id")) {
+                spec.id = d["id"].cast<std::string>();
+            } else if (d.contains("queue_id")) {
+                spec.id = d["queue_id"].cast<std::string>();
+            }
+            if (d.contains("gpu_quota")) {
+                spec.gpu_quota = d["gpu_quota"].cast<int>();
+            } else if (d.contains("quota")) {
+                spec.gpu_quota = d["quota"].cast<int>();
+            }
+        } else {
+            auto t = h.cast<py::tuple>();
+            spec.id = t[0].cast<std::string>();
+            spec.gpu_quota = t[1].cast<int>();
+        }
+        out.push_back(std::move(spec));
+    }
+    return out;
+}
+
 JobSpec parse_job_spec(const py::dict& d, int default_arrival) {
     JobSpec spec;
     spec.id = d["id"].cast<std::string>();
@@ -146,6 +190,11 @@ JobSpec parse_job_spec(const py::dict& d, int default_arrival) {
                                                  : d["gpus"].cast<int>();
     spec.duration = d.contains("duration") ? d["duration"].cast<int>() : 10;
     spec.priority = d.contains("priority") ? d["priority"].cast<int>() : 0;
+    if (d.contains("queue_id")) {
+        spec.queue_id = d["queue_id"].cast<std::string>();
+    } else if (d.contains("queue")) {
+        spec.queue_id = d["queue"].cast<std::string>();
+    }
     if (d.contains("arrival_time")) {
         spec.arrival_time = d["arrival_time"].cast<int>();
     } else if (d.contains("arrival")) {
@@ -163,15 +212,17 @@ PYBIND11_MODULE(gpu_scheduler, m) {
 
     py::class_<Scheduler>(m, "Scheduler")
         .def(py::init([](py::object nodes, const std::string& strategy,
-                         bool enable_preemption) {
-                 return Scheduler(parse_nodes(nodes), strategy, enable_preemption);
+                         bool enable_preemption, py::object queues) {
+                 return Scheduler(parse_nodes(nodes), strategy, enable_preemption,
+                                  parse_queues(queues));
              }),
              py::arg("nodes"), py::arg("strategy") = "topology_aware",
-             py::arg("enable_preemption") = true)
+             py::arg("enable_preemption") = true, py::arg("queues") = py::none())
         .def(
             "submit",
             [](Scheduler& self, py::object job_or_id, py::object gpu_request = py::none(),
-               int duration = 10, py::object arrival_time = py::none(), int priority = 0) {
+               int duration = 10, py::object arrival_time = py::none(), int priority = 0,
+               const std::string& queue_id = "default") {
                 JobSpec spec;
                 if (py::isinstance<py::dict>(job_or_id)) {
                     spec = parse_job_spec(job_or_id.cast<py::dict>(), self.current_time());
@@ -183,13 +234,15 @@ PYBIND11_MODULE(gpu_scheduler, m) {
                     spec.gpu_request = gpu_request.cast<int>();
                     spec.duration = duration;
                     spec.priority = priority;
+                    spec.queue_id = queue_id;
                     spec.arrival_time =
                         arrival_time.is_none() ? self.current_time() : arrival_time.cast<int>();
                 }
                 return result_to_dict(self.submit(spec));
             },
             py::arg("job_or_id"), py::arg("gpu_request") = py::none(), py::arg("duration") = 10,
-            py::arg("arrival_time") = py::none(), py::arg("priority") = 0)
+            py::arg("arrival_time") = py::none(), py::arg("priority") = 0,
+            py::arg("queue_id") = "default")
         .def("finish", &Scheduler::finish, py::arg("job_id"))
         .def("tick", [](Scheduler& self) { return snapshot_to_dict(self.tick()); })
         .def("snapshot", [](const Scheduler& self) { return snapshot_to_dict(self.snapshot()); })
@@ -201,16 +254,16 @@ PYBIND11_MODULE(gpu_scheduler, m) {
     m.def(
         "simulate",
         [](py::object nodes, py::iterable jobs, const std::string& strategy,
-           bool enable_preemption) {
+           bool enable_preemption, py::object queues) {
             std::vector<JobSpec> specs;
             for (auto item : jobs) {
                 specs.push_back(parse_job_spec(item.cast<py::dict>(), 0));
             }
-            return simulation_to_dict(
-                Simulator::run(parse_nodes(nodes), specs, strategy, enable_preemption));
+            return simulation_to_dict(Simulator::run(
+                parse_nodes(nodes), specs, strategy, enable_preemption, parse_queues(queues)));
         },
         py::arg("nodes"), py::arg("jobs"), py::arg("strategy"),
-        py::arg("enable_preemption") = true);
+        py::arg("enable_preemption") = true, py::arg("queues") = py::none());
 
     m.def("strategies", []() {
         py::list names;

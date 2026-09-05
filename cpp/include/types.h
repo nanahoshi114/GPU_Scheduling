@@ -25,12 +25,26 @@ struct Placement {
     std::string reason;
 };
 
+struct QueueSpec {
+    std::string id;
+    int gpu_quota = 0;
+};
+
+struct QueueView {
+    std::string id;
+    int gpu_quota = 0;
+    int used_gpus = 0;
+    int pending_count = 0;
+    int running_count = 0;
+};
+
 struct JobSpec {
     std::string id;
     int gpu_request = 0;
     int duration = 10;
     int arrival_time = 0;
     int priority = 0;
+    std::string queue_id = "default";
 };
 
 struct Job {
@@ -39,6 +53,7 @@ struct Job {
     int arrival_time = 0;
     int duration = 10;
     int priority = 0;
+    std::string queue_id = "default";
     JobState state = JobState::Pending;
     Placement placement;
     std::string reason;
@@ -75,6 +90,7 @@ struct JobView {
     int duration = 0;
     int arrival_time = 0;
     int priority = 0;
+    std::string queue_id;
     std::string state;
     int start_time = -1;
     int finish_time = -1;
@@ -100,6 +116,8 @@ struct Metrics {
     int max_pending = 0;
     int total_preemptions = 0;
     int preempted_jobs = 0;
+    int fair_share_pending = 0;
+    int fragmentation_pending = 0;
 };
 
 struct Snapshot {
@@ -107,6 +125,7 @@ struct Snapshot {
     std::string strategy;
     std::vector<NodeView> nodes;
     std::vector<JobView> jobs;
+    std::vector<QueueView> queues;
     Metrics metrics;
 };
 

@@ -8,8 +8,9 @@
 SimulationResult Simulator::run(std::vector<std::pair<std::string, int>> nodes,
                                 const std::vector<JobSpec>& jobs,
                                 const std::string& strategy,
-                                bool enable_preemption) {
-    Scheduler sched(std::move(nodes), strategy, enable_preemption);
+                                bool enable_preemption,
+                                std::vector<QueueSpec> queues) {
+    Scheduler sched(std::move(nodes), strategy, enable_preemption, std::move(queues));
 
     std::vector<JobSpec> remaining = jobs;
     std::sort(remaining.begin(), remaining.end(), [](const JobSpec& a, const JobSpec& b) {

@@ -7,6 +7,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -16,17 +17,6 @@ namespace {
 constexpr int kWeightCross = 100;
 constexpr int kWeightFrag = 10;
 constexpr int kWeightAwkward = 5;
-
-std::string join_node_ids(const std::vector<NodeAllocation>& allocs) {
-    std::ostringstream oss;
-    for (size_t i = 0; i < allocs.size(); ++i) {
-        if (i) {
-            oss << ", ";
-        }
-        oss << allocs[i].node_id << "(" << allocs[i].gpu_indices.size() << " GPU)";
-    }
-    return oss.str();
-}
 
 bool is_awkward(int leftover) {
     return leftover == 3 || leftover == 5 || leftover == 6 || leftover == 7;
@@ -157,8 +147,7 @@ public:
                             std::to_string(free) + "）";
             return result;
         }
-        p.reason = "FirstFit：按节点定义顺序依次占用空闲 GPU，使用节点 " +
-                   join_node_ids(p.allocations) + "。只要空闲总量足够即立即放置，不等待更集中的打包。";
+        p.reason = "First Fit：立即放置";
         result.success = true;
         result.placement = std::move(p);
         result.reason = result.placement.reason;
@@ -227,10 +216,8 @@ public:
 
         // 碎片等待：现在必须拆到比理想更多的节点，且稍后可能释放出整机，则先不调度。
         if (min_nodes > ideal_nodes && has_running) {
-            result.reason =
-                "资源碎片：当前最少需要跨 " + std::to_string(min_nodes) +
-                " 个节点（理想为 " + std::to_string(ideal_nodes) +
-                " 个）。存在运行中任务，等待 GPU 释放后可更集中放置，避免过度跨 Node 通信。";
+            result.reason = "资源碎片：需跨 " + std::to_string(min_nodes) +
+                            " 个节点（理想 " + std::to_string(ideal_nodes) + "），等待集中放置";
             return result;
         }
 
@@ -294,15 +281,11 @@ public:
             return result;
         }
 
-        std::ostringstream reason;
-        reason << "TopologyAware：优先将任务放在最少的节点上以降低跨 Node 通信；"
-               << "在跨 " << min_nodes << " 个节点的可行方案中选择碎片代价最低的放置。使用节点 "
-               << join_node_ids(best.allocations) << "。";
         if (degraded) {
-            reason << " 当前无运行中任务，为避免死锁在碎片状态下降级放置"
-                   << "（理想节点数 " << ideal_nodes << "）。";
+            best.reason = "Topology-aware：降级放置，避免死锁";
+        } else {
+            best.reason = "Topology-aware：最少节点放置";
         }
-        best.reason = reason.str();
         result.success = true;
         result.placement = std::move(best);
         result.reason = result.placement.reason;
@@ -324,7 +307,7 @@ std::unique_ptr<PlacementStrategy> make_strategy(const std::string& name) {
 }
 
 Scheduler::Scheduler(std::vector<std::pair<std::string, int>> nodes, const std::string& strategy,
-                     bool enable_preemption)
+                     bool enable_preemption, std::vector<QueueSpec> queues)
     : enable_preemption_(enable_preemption) {
     if (nodes.empty()) {
         throw std::invalid_argument("cluster must contain at least one node");
@@ -334,6 +317,24 @@ Scheduler::Scheduler(std::vector<std::pair<std::string, int>> nodes, const std::
     }
     strategy_ = make_strategy(strategy);
     strategy_name_ = strategy_->name();
+
+    if (queues.empty()) {
+        queues_.push_back({"default", cluster_.total_gpus()});
+        return;
+    }
+    std::unordered_set<std::string> seen;
+    for (const auto& queue : queues) {
+        if (queue.id.empty()) {
+            throw std::invalid_argument("queue id 不能为空");
+        }
+        if (queue.gpu_quota <= 0) {
+            throw std::invalid_argument("队列 " + queue.id + " 的 gpu_quota 必须为正");
+        }
+        if (!seen.insert(queue.id).second) {
+            throw std::invalid_argument("队列 id 重复: " + queue.id);
+        }
+        queues_.push_back(queue);
+    }
 }
 
 ScheduleResult Scheduler::submit(const JobSpec& spec) {
@@ -361,12 +362,25 @@ ScheduleResult Scheduler::submit(const JobSpec& spec) {
         return result;
     }
 
+    const std::string queue_id = spec.queue_id.empty() ? "default" : spec.queue_id;
+    const QueueSpec* queue = find_queue(queue_id);
+    if (queue == nullptr) {
+        result.reason = "未知队列: " + queue_id;
+        return result;
+    }
+    if (spec.gpu_request > queue->gpu_quota) {
+        result.reason = "任务申请 " + std::to_string(spec.gpu_request) + " GPU 超过队列 " +
+                        queue_id + " 配额 " + std::to_string(queue->gpu_quota);
+        return result;
+    }
+
     Job job;
     job.id = spec.id;
     job.gpu_request = spec.gpu_request;
     job.duration = spec.duration;
     job.arrival_time = spec.arrival_time >= 0 ? spec.arrival_time : time_;
     job.priority = spec.priority;
+    job.queue_id = queue_id;
     job.state = JobState::Pending;
     job.remaining_duration = spec.duration;
     job.pending_since = time_;
@@ -466,7 +480,8 @@ ScheduleResult Scheduler::find_preemption_plan(const Job& incoming) const {
 
     std::vector<Victim> eligible;
     for (const auto& job : jobs_) {
-        if (job.state == JobState::Running && job.priority < incoming.priority) {
+        if (job.state == JobState::Running && job.priority < incoming.priority &&
+            job.queue_id == incoming.queue_id) {
             eligible.push_back(
                 {&job, allocated_gpus(job), std::max(0, time_ - job.start_time)});
         }
@@ -511,6 +526,10 @@ ScheduleResult Scheduler::find_preemption_plan(const Job& incoming) const {
         std::tuple<int, int, int, int, std::vector<std::string>> best_key;
         std::vector<int> picked;
 
+        const int queue_used = queue_used_gpus(incoming.queue_id);
+        const QueueSpec* queue = find_queue(incoming.queue_id);
+        const int quota = queue == nullptr ? 0 : queue->gpu_quota;
+
         std::function<void(int, int)> search = [&](int start, int remaining) {
             if (remaining == 0) {
                 Cluster trial = cluster_;
@@ -527,6 +546,9 @@ ScheduleResult Scheduler::find_preemption_plan(const Job& incoming) const {
                     trial.release(victim.job->id);
                 }
 
+                if (queue_used - released + incoming.gpu_request > quota) {
+                    return;
+                }
                 if (trial.free_gpus() < incoming.gpu_request) {
                     return;
                 }
@@ -550,20 +572,10 @@ ScheduleResult Scheduler::find_preemption_plan(const Job& incoming) const {
                     best.victims = victim_ids;
 
                     std::ostringstream reason;
-                    reason << "抢占调度：高优先级任务 " << incoming.id << "(P"
-                           << incoming.priority << ") 抢占 ";
+                    reason << "抢占";
                     for (size_t i = 0; i < victim_ids.size(); ++i) {
-                        if (i) {
-                            reason << ", ";
-                        }
-                        const auto it = std::find_if(
-                            eligible.begin(), eligible.end(), [&](const Victim& victim) {
-                                return victim.job->id == victim_ids[i];
-                            });
-                        reason << victim_ids[i] << "(P" << it->job->priority << ")";
+                        reason << (i ? "、" : " ") << victim_ids[i];
                     }
-                    reason << "，释放 " << released << " GPU。"
-                           << best.placement.reason;
                     best.reason = reason.str();
                     best.placement.reason = best.reason;
                 }
@@ -603,18 +615,27 @@ void Scheduler::preempt_victims(const Job& incoming,
         victim.start_time = -1;
         victim.pending_since = time_;
         victim.preemption_count++;
-        victim.reason = "被高优先级任务 " + incoming.id + "(P" +
-                        std::to_string(incoming.priority) + ") 抢占；剩余运行时长 " +
-                        std::to_string(victim.remaining_duration) + " tick。";
+        victim.reason = "被 " + incoming.id + " 抢占";
     }
 }
 
 ScheduleResult Scheduler::try_schedule_job(Job& job) {
-    auto placed =
-        strategy_->try_place(cluster_, job.gpu_request, has_running_jobs());
-    if (placed.success) {
-        apply_placement(job, placed);
-        return placed;
+    const QueueSpec* queue = find_queue(job.queue_id);
+    const int used = queue_used_gpus(job.queue_id);
+    const int quota = queue == nullptr ? 0 : queue->gpu_quota;
+    const bool quota_ok = used + job.gpu_request <= quota;
+
+    ScheduleResult placed;
+    if (quota_ok) {
+        placed = strategy_->try_place(cluster_, job.gpu_request, has_running_jobs());
+        if (placed.success) {
+            apply_placement(job, placed);
+            return placed;
+        }
+    } else {
+        placed.reason = "队列 " + job.queue_id + " 配额不足（已用 " + std::to_string(used) +
+                        "/" + std::to_string(quota) + "，申请 " +
+                        std::to_string(job.gpu_request) + "）";
     }
 
     const std::string direct_failure = placed.reason;
@@ -628,8 +649,7 @@ ScheduleResult Scheduler::try_schedule_job(Job& job) {
     }
 
     if (enable_preemption_ && job.priority > 0 && has_running_jobs()) {
-        placed.reason = direct_failure +
-                        "；没有可安全抢占的更低优先级任务组合。";
+        placed.reason = direct_failure + "；无可抢占任务";
     }
     return placed;
 }
@@ -652,6 +672,7 @@ JobView Scheduler::to_view(const Job& job) const {
     v.duration = job.duration;
     v.arrival_time = job.arrival_time;
     v.priority = job.priority;
+    v.queue_id = job.queue_id;
     switch (job.state) {
         case JobState::Pending:
             v.state = "pending";
@@ -720,6 +741,11 @@ Metrics Scheduler::metrics_with_avg(double avg_utilization, int makespan, int ma
         }
         if (is_waiting(job.state)) {
             m.pending_count++;
+            if (is_fair_share_reason(job.reason)) {
+                m.fair_share_pending++;
+            } else {
+                m.fragmentation_pending++;
+            }
             wait_sum += static_cast<double>(
                 job.wait_time + std::max(0, time_ - job.pending_since));
             wait_n++;
@@ -752,6 +778,62 @@ Snapshot Scheduler::snapshot() const {
     for (const auto& job : jobs_) {
         s.jobs.push_back(to_view(job));
     }
+    s.queues = queue_views();
     s.metrics = metrics();
     return s;
+}
+
+const QueueSpec* Scheduler::find_queue(const std::string& queue_id) const {
+    for (const auto& queue : queues_) {
+        if (queue.id == queue_id) {
+            return &queue;
+        }
+    }
+    return nullptr;
+}
+
+int Scheduler::queue_used_gpus(const std::string& queue_id,
+                               const std::vector<std::string>& excluded) const {
+    const std::unordered_set<std::string> excluded_set(excluded.begin(), excluded.end());
+    int used = 0;
+    for (const auto& job : jobs_) {
+        if (job.state == JobState::Running && job.queue_id == queue_id &&
+            excluded_set.count(job.id) == 0) {
+            used += job.gpu_request;
+        }
+    }
+    return used;
+}
+
+bool Scheduler::is_fair_share_reason(const std::string& reason) const {
+    return reason.find("配额不足") != std::string::npos;
+}
+
+std::vector<QueueView> Scheduler::queue_views() const {
+    std::unordered_map<std::string, QueueView> by_id;
+    by_id.reserve(queues_.size());
+    for (const auto& queue : queues_) {
+        QueueView view;
+        view.id = queue.id;
+        view.gpu_quota = queue.gpu_quota;
+        by_id.emplace(queue.id, view);
+    }
+    for (const auto& job : jobs_) {
+        auto it = by_id.find(job.queue_id);
+        if (it == by_id.end()) {
+            continue;
+        }
+        if (job.state == JobState::Running) {
+            it->second.used_gpus += job.gpu_request;
+            it->second.running_count++;
+        } else if (is_waiting(job.state)) {
+            it->second.pending_count++;
+        }
+    }
+    std::vector<QueueView> out;
+    out.reserve(queues_.size());
+    for (const auto& queue : queues_) {
+        out.push_back(by_id[queue.id]);
+    }
+    return out;
 }
