@@ -6,6 +6,7 @@ class Scheduler:
         nodes: Sequence[tuple[str, int] | Mapping[str, Any]],
         strategy: str = "topology_aware",
         enable_preemption: bool = True,
+        queues: Sequence[tuple[str, int] | Mapping[str, Any]] | None = None,
     ) -> None: ...
     def submit(
         self,
@@ -14,6 +15,7 @@ class Scheduler:
         duration: int = 10,
         arrival_time: int | None = None,
         priority: int = 0,
+        queue_id: str = "default",
     ) -> dict[str, Any]: ...
     def finish(self, job_id: str) -> bool: ...
     def tick(self) -> dict[str, Any]: ...
@@ -31,5 +33,6 @@ def simulate(
     jobs: Iterable[Mapping[str, Any]],
     strategy: str,
     enable_preemption: bool = True,
+    queues: Sequence[tuple[str, int] | Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]: ...
 def strategies() -> list[str]: ...

@@ -17,17 +17,26 @@ def nodes_from(cluster: dict):
 
 
 def test_insufficient_gpus_pending_with_reason():
-    sched = gs.Scheduler([("node-A", 8), ("node-B", 8)], "first_fit")
-    result = sched.submit("big", 24, duration=5)
+    sched = gs.Scheduler(
+        [("node-A", 8), ("node-B", 8)],
+        "first_fit",
+        True,
+        [("research", 16), ("prod", 16)],
+    )
+    assert sched.submit("fill", 8, duration=5, queue_id="prod")["success"]
+    result = sched.submit("big", 12, duration=5, queue_id="research")
     assert result["success"] is False
     assert "不足" in result["reason"]
+    assert "配额不足" not in result["reason"]
 
     snap = sched.snapshot()
     jobs = {j["id"]: j for j in snap["jobs"]}
     assert jobs["big"]["state"] == "pending"
     assert jobs["big"]["reason"] == result["reason"]
     assert snap["metrics"]["pending_count"] == 1
-    assert snap["metrics"]["used_gpus"] == 0
+    assert snap["metrics"]["used_gpus"] == 8
+    assert snap["metrics"]["fragmentation_pending"] == 1
+    assert snap["metrics"]["fair_share_pending"] == 0
 
 
 def test_first_fit_packs_single_node_when_empty():
@@ -268,3 +277,121 @@ def test_priority_workload_simulation_records_preemption_timeline():
         for snapshot in result["timeline"]
         for job in snapshot["jobs"]
     )
+
+
+QUOTA_QUEUES = [("research", 16), ("prod", 12), ("default", 4)]
+
+
+def test_implicit_default_queue_uses_cluster_capacity():
+    sched = gs.Scheduler([("A", 8), ("B", 8)], "first_fit")
+    queues = {q["id"]: q for q in sched.snapshot()["queues"]}
+    assert queues["default"]["gpu_quota"] == 16
+    assert queues["default"]["used_gpus"] == 0
+    result = sched.submit("job-a", 8, duration=5)
+    assert result["success"]
+    snap = sched.snapshot()
+    assert snap["jobs"][0]["queue_id"] == "default"
+    assert snap["queues"][0]["used_gpus"] == 8
+
+
+def test_over_quota_pending_while_cluster_has_free_gpus():
+    nodes = [("A", 8), ("B", 8), ("C", 8), ("D", 8)]
+    sched = gs.Scheduler(nodes, "first_fit", True, QUOTA_QUEUES)
+    assert sched.submit("res-a", 8, duration=20, queue_id="research")["success"]
+    assert sched.submit("res-b", 8, duration=20, queue_id="research")["success"]
+
+    extra = sched.submit("res-extra", 8, duration=8, queue_id="research")
+    assert extra["success"] is False
+    assert "配额不足" in extra["reason"]
+
+    prod = sched.submit("prod-a", 8, duration=10, queue_id="prod")
+    assert prod["success"]
+
+    snap = sched.snapshot()
+    jobs = {j["id"]: j for j in snap["jobs"]}
+    queues = {q["id"]: q for q in snap["queues"]}
+    assert jobs["res-extra"]["state"] == "pending"
+    assert jobs["prod-a"]["state"] == "running"
+    assert snap["metrics"]["used_gpus"] == 24
+    assert snap["metrics"]["fair_share_pending"] == 1
+    assert snap["metrics"]["fragmentation_pending"] == 0
+    assert queues["research"]["used_gpus"] == 16
+    assert queues["research"]["pending_count"] == 1
+    assert queues["prod"]["used_gpus"] == 8
+
+
+def test_request_exceeding_quota_is_rejected():
+    nodes = [("A", 8), ("B", 8), ("C", 8), ("D", 8)]
+    sched = gs.Scheduler(nodes, "first_fit", True, QUOTA_QUEUES)
+    result = sched.submit("too-big", 20, duration=5, queue_id="research")
+    assert result["success"] is False
+    assert "超过队列" in result["reason"]
+    assert sched.snapshot()["jobs"] == []
+
+
+def test_unknown_queue_is_rejected():
+    sched = gs.Scheduler([("A", 8)], "first_fit", True, QUOTA_QUEUES)
+    result = sched.submit("ghost", 2, duration=5, queue_id="missing")
+    assert result["success"] is False
+    assert "未知队列" in result["reason"]
+    assert sched.snapshot()["jobs"] == []
+
+
+def test_same_queue_preemption_respects_quota():
+    nodes = [("A", 8), ("B", 8), ("C", 8), ("D", 8)]
+    sched = gs.Scheduler(nodes, "first_fit", True, QUOTA_QUEUES)
+    assert sched.submit("res-a", 8, duration=20, priority=1, queue_id="research")["success"]
+    assert sched.submit("res-b", 8, duration=20, priority=1, queue_id="research")["success"]
+
+    result = sched.submit("urgent", 8, duration=3, priority=10, queue_id="research")
+    assert result["success"]
+    assert len(result["victims"]) == 1
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["urgent"]["state"] == "running"
+    assert jobs[result["victims"][0]]["state"] == "preempted"
+    queues = {q["id"]: q for q in sched.snapshot()["queues"]}
+    assert queues["research"]["used_gpus"] == 16
+
+
+def test_cross_queue_preemption_is_forbidden():
+    sched = gs.Scheduler(
+        [("A", 8)], "first_fit", True, [("research", 8), ("prod", 8)]
+    )
+    assert sched.submit("res", 8, duration=20, priority=1, queue_id="research")["success"]
+    result = sched.submit("prod-urgent", 8, duration=3, priority=100, queue_id="prod")
+    assert result["success"] is False
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["res"]["state"] == "running"
+    assert jobs["prod-urgent"]["state"] == "pending"
+    assert sched.metrics()["total_preemptions"] == 0
+    assert sched.metrics()["fair_share_pending"] == 0
+    assert sched.metrics()["fragmentation_pending"] == 1
+
+
+def test_finish_releases_quota_and_starts_pending():
+    nodes = [("A", 8), ("B", 8), ("C", 8), ("D", 8)]
+    sched = gs.Scheduler(nodes, "first_fit", True, QUOTA_QUEUES)
+    sched.submit("res-a", 8, duration=20, queue_id="research")
+    sched.submit("res-b", 8, duration=20, queue_id="research")
+    sched.submit("res-extra", 8, duration=8, queue_id="research")
+    assert sched.snapshot()["jobs"][-1]["state"] == "pending"
+
+    assert sched.finish("res-a")
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["res-extra"]["state"] == "running"
+    assert sched.metrics()["fair_share_pending"] == 0
+
+
+def test_quota_workload_simulation_records_fair_share_delay():
+    cluster = load_json("cluster_4x8.json")
+    workload = load_json("jobs_quota.json")
+    queues = [(q["id"], q["gpu_quota"]) for q in workload["queues"]]
+    result = gs.simulate(
+        nodes_from(cluster), workload["jobs"], "first_fit", True, queues
+    )
+
+    assert result["final_snapshot"]["queues"]
+    assert any(snap["metrics"]["fair_share_pending"] > 0 for snap in result["timeline"])
+    by_id = {q["id"]: q for q in result["final_snapshot"]["queues"]}
+    assert set(by_id) == {"research", "prod", "default"}
+    assert all(q["used_gpus"] <= q["gpu_quota"] for q in by_id.values())

@@ -53,10 +53,16 @@ class NodeSpec(BaseModel):
     gpu_count: int = Field(gt=0)
 
 
+class QueueSpec(BaseModel):
+    id: str
+    gpu_quota: int = Field(gt=0)
+
+
 class SessionRequest(BaseModel):
     nodes: list[NodeSpec]
     strategy: str = "topology_aware"
     enable_preemption: bool = True
+    queues: Optional[list[QueueSpec]] = None
 
 
 class JobRequest(BaseModel):
@@ -64,6 +70,7 @@ class JobRequest(BaseModel):
     gpu_request: int = Field(gt=0)
     duration: int = Field(default=10, gt=0)
     priority: int = Field(default=0, ge=0)
+    queue_id: str = "default"
 
 
 class CompareRequest(BaseModel):
@@ -72,6 +79,7 @@ class CompareRequest(BaseModel):
     jobs: Optional[list[dict[str, Any]]] = None
     jobs_id: Optional[str] = None
     enable_preemption: bool = True
+    queues: Optional[list[QueueSpec]] = None
 
 
 def _cluster_nodes(req: CompareRequest) -> list[tuple[str, int]]:
@@ -92,6 +100,20 @@ def _job_list(req: CompareRequest) -> list[dict[str, Any]]:
             if w["id"] == req.jobs_id:
                 return w["jobs"]
     raise HTTPException(status_code=400, detail="请提供 jobs 或 jobs_id")
+
+
+def _queue_tuples(queues: Optional[list[QueueSpec]]) -> Optional[list[tuple[str, int]]]:
+    if not queues:
+        return None
+    return [(q.id, q.gpu_quota) for q in queues]
+
+
+def _compare_queues(req: CompareRequest) -> Optional[list[tuple[str, int]]]:
+    if req.jobs_id:
+        for w in _presets()["jobs"]:
+            if w["id"] == req.jobs_id and w.get("queues"):
+                return [(q["id"], q["gpu_quota"]) for q in w["queues"]]
+    return _queue_tuples(req.queues)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -117,7 +139,9 @@ def api_session(req: SessionRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="至少定义一个 Node")
     nodes = [(n.id, n.gpu_count) for n in req.nodes]
     try:
-        sched = gs.Scheduler(nodes, req.strategy, req.enable_preemption)
+        sched = gs.Scheduler(
+            nodes, req.strategy, req.enable_preemption, _queue_tuples(req.queues)
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     with _lock:
@@ -137,7 +161,11 @@ def api_submit(req: JobRequest) -> dict[str, Any]:
     with _lock:
         sched = _require_scheduler()
         result = sched.submit(
-            req.id, req.gpu_request, duration=req.duration, priority=req.priority
+            req.id,
+            req.gpu_request,
+            duration=req.duration,
+            priority=req.priority,
+            queue_id=req.queue_id,
         )
         return {"result": result, "snapshot": sched.snapshot()}
 
@@ -162,9 +190,10 @@ def api_tick() -> dict[str, Any]:
 def api_compare(req: CompareRequest) -> dict[str, Any]:
     nodes = _cluster_nodes(req)
     jobs = _job_list(req)
+    queues = _compare_queues(req)
     try:
-        ff = gs.simulate(nodes, jobs, "first_fit", req.enable_preemption)
-        ta = gs.simulate(nodes, jobs, "topology_aware", req.enable_preemption)
+        ff = gs.simulate(nodes, jobs, "first_fit", req.enable_preemption, queues)
+        ta = gs.simulate(nodes, jobs, "topology_aware", req.enable_preemption, queues)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"first_fit": ff, "topology_aware": ta}

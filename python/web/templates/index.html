@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GPU 拓扑感知调度器</title>
-  <link rel="stylesheet" href="/static/style.css?v=5" />
+  <link rel="stylesheet" href="/static/style.css?v=9" />
 </head>
 <body>
   <header class="top">
@@ -41,7 +41,13 @@
             <button id="add-node" class="ghost">添加 Node</button>
             <button id="create-session" class="primary">创建 / 重置会话</button>
           </div>
-          <p class="hint">创建会话后即可提交任务。切换策略需重新创建。</p>
+          <h3 class="subhead">队列配额</h3>
+          <div id="queue-editor" class="node-editor"></div>
+          <div class="row">
+            <button id="add-queue" class="ghost">添加队列</button>
+            <button id="fill-demo-queues" class="ghost">填入多租户演示配额</button>
+          </div>
+          <p class="hint">创建会话后即可提交任务。切换策略需重新创建。未改队列时使用隐式 default（配额=集群总卡数）。</p>
         </aside>
 
         <aside class="card">
@@ -57,6 +63,11 @@
           </label>
           <label>优先级（数值越大越高）
             <input id="job-priority" type="number" min="0" value="0" />
+          </label>
+          <label>队列
+            <select id="job-queue">
+              <option value="default">default</option>
+            </select>
           </label>
           <div class="row">
             <button id="submit-job" class="primary">提交任务</button>
@@ -74,8 +85,11 @@
             <div><span class="k">跨 Node 任务</span><span id="m-cross" class="v">—</span></div>
             <div><span class="k">累计抢占</span><span id="m-preemptions" class="v">—</span></div>
             <div><span class="k">已用 / 总量</span><span id="m-used" class="v">—</span></div>
+            <div><span class="k">公平份额等待</span><span id="m-fair" class="v">—</span></div>
+            <div><span class="k">碎片等待</span><span id="m-frag" class="v">—</span></div>
             <div><span class="k">模拟时钟</span><span id="m-time" class="v">—</span></div>
           </div>
+          <div id="queue-bars" class="queue-bars"></div>
         </aside>
       </div>
 
@@ -91,6 +105,7 @@
             <thead>
               <tr>
                 <th>任务</th>
+                <th>队列</th>
                 <th>优先级</th>
                 <th>GPU</th>
                 <th>状态</th>
@@ -139,6 +154,6 @@
     </section>
   </main>
 
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/app.js?v=9"></script>
 </body>
 </html>
