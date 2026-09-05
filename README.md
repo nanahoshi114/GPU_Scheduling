@@ -13,8 +13,9 @@
 - 处理 GPU 不足与碎片（不足则等待；过度跨 Node 时可推迟调度）
 - 支持非负整数优先级，以及可开关的高优先级自动抢占
 - 被抢占任务保留剩余时长，稍后按优先级恢复运行
+- 多租户 Queue / 硬数量 Quota：超配额任务保持 pending（fair-share delay），抢占只发生在同一队列内
 - 展示每个任务分配到的 Node / GPU，以及调度原因
-- 指标：GPU 利用率、等待任务数 / 平均等待时间、跨 Node 任务数、抢占次数
+- 指标：GPU 利用率、等待任务数 / 平均等待时间、跨 Node 任务数、抢占次数、公平份额 / 碎片等待
 - 同一组任务对比两种策略
 
 ## 环境要求
@@ -45,12 +46,20 @@ cmake -S . -B build \
 启动 Web 界面：
 
 ```bash
+./start_web_interface.sh
+```
+
+脚本会使用仓库里的 `.venv`，缺依赖时自动 `pip install -e .`。改过 C++ 后可加 `--rebuild`。也可用 `HOST` / `PORT` 覆盖监听地址。
+
+或手动启动：
+
+```bash
 uvicorn python.web.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
 浏览器打开 [http://127.0.0.1:8000](http://127.0.0.1:8000)。
 
-- **交互调度**：选择或编辑集群、开关抢占、提交带优先级的任务、结束任务或步进时钟
+- **交互调度**：选择或编辑集群与队列配额、开关抢占、提交带优先级 / 队列的任务、结束任务或步进时钟
 - **策略对比**：加载预设任务，并排比较 First Fit 与 Topology-aware；支持自动/手动 timeline 可视化
 
 运行测试：
@@ -65,12 +74,17 @@ pytest -v
 import gpu_scheduler as gs
 
 nodes = [("node-A", 8), ("node-B", 8), ("node-C", 8), ("node-D", 8)]
-sched = gs.Scheduler(nodes, "topology_aware", enable_preemption=True)
-print(sched.submit("job-a", 8, duration=10, priority=10))
+sched = gs.Scheduler(
+    nodes,
+    "topology_aware",
+    enable_preemption=True,
+    queues=[("research", 16), ("prod", 12), ("default", 4)],
+)
+print(sched.submit("job-a", 8, duration=10, priority=10, queue_id="research"))
 print(sched.snapshot())
 print(gs.simulate(nodes, [
-    {"id": "j1", "gpu_request": 4, "arrival_time": 0, "duration": 5, "priority": 1},
-], "first_fit", True)["metrics"])
+    {"id": "j1", "gpu_request": 4, "arrival_time": 0, "duration": 5, "priority": 1, "queue_id": "prod"},
+], "first_fit", True, [("research", 16), ("prod", 12), ("default", 4)])["metrics"])
 ```
 
 ## 预设数据
@@ -82,13 +96,14 @@ print(gs.simulate(nodes, [
 | [data/jobs_20.json](data/jobs_20.json) | 20 个任务，混合 1/2/4/8 卡，错开到达与时长 |
 | [data/jobs_100.json](data/jobs_100.json) | 100 个混合训练任务，用于较长压力模拟 |
 | [data/jobs_priority.json](data/jobs_priority.json) | 低优先级长任务先占满集群，演示抢占与恢复 |
+| [data/jobs_quota.json](data/jobs_quota.json) | research 16 / prod 12 / default 4，演示公平份额等待与队内抢占 |
 
 ## 核心设计
 
 ### 模型
 
 - 集群由若干 Node 组成，每个 Node 含固定数量的同质 GPU
-- 任务申请若干张 GPU，带非负整数优先级（数值越大越高）
+- 任务申请若干张 GPU，带非负整数优先级（数值越大越高）和 `queue_id`
 - 状态为 pending / running / preempted / finished
 - 放置结果是 `[(node_id, gpu_indices), ...]`，并附带人类可读原因
 
@@ -122,7 +137,7 @@ print(gs.simulate(nodes, [
 ### 优先级与抢占
 
 - Pending/Preempted 任务按优先级降序调度，同优先级保持 FIFO；无法放置的大任务之后允许小任务回填
-- 高优先级任务直接放置失败时，只考虑严格低优先级的 running 任务
+- 高优先级任务直接放置失败时，只考虑**同一队列内**严格低优先级的 running 任务
 - 受害任务扣除已运行时间，进入 preempted；资源可用后从 `remaining_duration` 继续
 
 可通过 `Scheduler(..., enable_preemption=False)` 或 Web 开关关闭抢占。`total_preemptions` 统计累计抢占次数，`preempted_jobs` 表示当前处于 preempted 状态的任务数。
@@ -152,6 +167,19 @@ print(gs.simulate(nodes, [
 
 选定后再一次性修改真实状态：释放受害者、启动新任务。副本验证失败则真实集群完全不变。
 
+### 多租户 Queue / Quota
+
+每个 Queue 有硬数量 `gpu_quota`：该队列 running GPU 数不得超过配额。未配置队列时合成隐式 `default`，配额等于集群总卡数，旧任务集行为不变。
+
+- 作业 `gpu_request` 大于队列配额，或队列不存在 → 拒绝提交
+- 配额已用尽 → 任务保持 pending，记为 **fair-share delay**（Philly）；集群仍可能有空闲卡（其他队列未用完）
+- 配额还够但放置失败 → **fragmentation delay**（GPU 不足或拓扑等待）
+- 抢占只发生在同一队列内，不能借用或回收其他队列的卡
+
+Web 交互页可编辑队列，或一键填入演示配额 `research 16 / prod 12 / default 4`。策略对比加载 `jobs_quota` 时会自动带上该任务集的队列定义。
+
+不做 HiveD cell 拓扑配额，也不做闲置借用 / 跨队列 reclaim。
+
 ## 策略对比（同一组 20 个任务）
 
 | 集群 | 策略 | 时间平均 GPU 利用率 | 平均等待 | 跨 Node 任务 | Makespan |
@@ -177,7 +205,7 @@ tests/                 调用扩展模块的 pytest
 ## 已知限制
 
 - 不模拟 NVLink / NVSwitch 等机内拓扑，也不区分 GPU 型号与显存
-- 无多租户 Queue / Quota
+- Quota 是 GPU 张数硬上限，不是 HiveD cell，也不允许借用其他队列的闲置配额
 - 抢占不模拟 checkpoint 保存和恢复开销，也未实现优先级老化；持续高优先级负载可能使低优先级任务饥饿
 - 未实现 Kubernetes / Volcano Scheduler Plugin
 - Topology-aware 的组合搜索在节点很多时会截断为最空闲的若干台，极端大规模集群上可能不是全局最优
