@@ -30,15 +30,108 @@ function placementText(job) {
     .join("； ");
 }
 
+const FIELD_LABELS = {
+  gpu_count: "Node GPU 数量",
+  gpu_quota: "队列配额",
+  gpu_request: "申请 GPU 数",
+  duration: "运行时长",
+  priority: "优先级",
+  id: "名称",
+};
+
+function showInput(value) {
+  if (value === undefined || value === null || value === "" || Number.isNaN(value)) return "空";
+  return String(value);
+}
+
+function formatPydanticItem(err) {
+  if (typeof err === "string" && err.trim()) return err;
+  if (!err || typeof err !== "object") return "";
+  const loc = Array.isArray(err.loc) ? err.loc : [];
+  const field = [...loc].reverse().find((x) => typeof x === "string" && x !== "body") || "参数";
+  const label = FIELD_LABELS[field] || field;
+  const typ = err.type || "";
+  const shown = showInput(err.input);
+  if (typ === "greater_than") return `${label} 必须为正整数，当前为 ${shown}`;
+  if (typ === "greater_than_equal") return `${label} 不能为负数，当前为 ${shown}`;
+  if (typ === "missing") return `缺少 ${label}`;
+  if (typ === "int_parsing" || typ === "int_type" || typ === "float_parsing") return `${label} 必须是整数`;
+  if (typ === "string_type") return `${label} 必须是文本`;
+  return `${label} 无效`;
+}
+
+function formatApiError(data, fallback) {
+  const detail = data && data.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail.map(formatPydanticItem).filter(Boolean);
+    if (parts.length) return parts.join("；");
+  }
+  if (fallback && fallback !== "Unprocessable Entity") return `请求失败：${fallback}`;
+  return "请求失败，请检查输入或稍后重试";
+}
+
+function isPositiveInt(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0;
+}
+
+function isNonNegativeInt(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0;
+}
+
+function validateSession(nodes, queues) {
+  if (!nodes.length) return "至少定义一个 Node";
+  const seen = new Set();
+  for (const node of nodes) {
+    const id = String(node.id || "").trim();
+    if (!id) return "节点名称不能为空";
+    if (!isPositiveInt(node.gpu_count)) {
+      return `节点「${id}」的 GPU 数量必须为正整数，当前为 ${showInput(node.gpu_count)}`;
+    }
+    if (seen.has(id)) return `节点 id 重复: ${id}`;
+    seen.add(id);
+  }
+  const queueSeen = new Set();
+  for (const queue of queues || []) {
+    const id = String(queue.id || "").trim();
+    if (!id) return "队列名称不能为空";
+    if (!isPositiveInt(queue.gpu_quota)) {
+      return `队列「${id}」的配额必须为正整数，当前为 ${showInput(queue.gpu_quota)}`;
+    }
+    if (queueSeen.has(id)) return `队列 id 重复: ${id}`;
+    queueSeen.add(id);
+  }
+  return "";
+}
+
+function validateJob(payload) {
+  if (!isPositiveInt(payload.gpu_request)) {
+    return `申请 GPU 数必须为正整数，当前为 ${showInput(payload.gpu_request)}`;
+  }
+  if (!isPositiveInt(payload.duration)) {
+    return `运行时长必须为正整数，当前为 ${showInput(payload.duration)}`;
+  }
+  if (!isNonNegativeInt(payload.priority)) {
+    return `优先级必须为非负整数，当前为 ${showInput(payload.priority)}`;
+  }
+  return "";
+}
+
 async function api(path, options = {}) {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+  } catch {
+    throw new Error("无法连接服务器，请确认 Web 已启动");
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const msg = data.detail || res.statusText;
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    throw new Error(formatApiError(data, res.statusText));
   }
   return data;
 }
@@ -511,6 +604,11 @@ $("#fill-demo-queues").addEventListener("click", () => {
 });
 
 $("#create-session").addEventListener("click", async () => {
+  const localError = validateSession(nodeRows, queueRows);
+  if (localError) {
+    $("#last-reason").textContent = localError;
+    return;
+  }
   try {
     const snap = await api("/api/session", {
       method: "POST",
@@ -537,6 +635,11 @@ $("#submit-job").addEventListener("click", async () => {
       priority: Number($("#job-priority").value),
       queue_id: $("#job-queue").value || "default",
     };
+    const localError = validateJob(payload);
+    if (localError) {
+      $("#last-reason").textContent = localError;
+      return;
+    }
     const data = await api("/api/jobs", { method: "POST", body: JSON.stringify(payload) });
     $("#last-reason").textContent = data.result.reason;
     $("#job-id").value = "";
@@ -564,12 +667,19 @@ $("#run-compare").addEventListener("click", async () => {
   $("#compare-result").innerHTML = visualize
     ? `<p class="hint">${manual ? "正在计算模拟结果，随后可手动逐步推进时间..." : "正在计算模拟结果，随后按 1 秒 / tick 并排播放 GPU 占用..."}</p>`
     : `<p class="hint">正在模拟...</p>`;
+  const clusterId = $("#cmp-cluster").value;
+  const jobsId = $("#cmp-jobs").value;
+  if (!clusterId || !jobsId) {
+    $("#compare-result").innerHTML = `<p class="reason">请选择集群和任务集</p>`;
+    btn.disabled = false;
+    return;
+  }
   try {
     const data = await api("/api/compare", {
       method: "POST",
       body: JSON.stringify({
-        cluster_id: $("#cmp-cluster").value,
-        jobs_id: $("#cmp-jobs").value,
+        cluster_id: clusterId,
+        jobs_id: jobsId,
         enable_preemption: $("#cmp-preemption").checked,
       }),
     });
@@ -600,6 +710,11 @@ $("#stop-compare").addEventListener("click", () => {
 });
 
 (async function init() {
-  presets = await api("/api/presets");
-  fillClusterSelects();
+  try {
+    presets = await api("/api/presets");
+    fillClusterSelects();
+  } catch (err) {
+    if ($("#last-reason")) $("#last-reason").textContent = err.message;
+    if ($("#compare-result")) $("#compare-result").innerHTML = `<p class="reason">${err.message}</p>`;
+  }
 })();
