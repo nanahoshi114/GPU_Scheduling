@@ -13,7 +13,16 @@ def load_json(name: str) -> dict:
 
 
 def nodes_from(cluster: dict):
-    return [(n["id"], n["gpu_count"]) for n in cluster["nodes"]]
+    out = []
+    for n in cluster["nodes"]:
+        item = {"id": n["id"], "gpu_count": n["gpu_count"]}
+        if n.get("topology"):
+            item["topology"] = n["topology"]
+        out.append(item)
+    return out
+
+
+DUAL_A = [{"id": "A", "gpu_count": 8, "topology": "dual_numa8"}]
 
 
 def test_insufficient_gpus_pending_with_reason():
@@ -395,3 +404,249 @@ def test_quota_workload_simulation_records_fair_share_delay():
     by_id = {q["id"]: q for q in result["final_snapshot"]["queues"]}
     assert set(by_id) == {"research", "prod", "default"}
     assert all(q["used_gpus"] <= q["gpu_quota"] for q in by_id.values())
+
+
+def test_legacy_tuple_nodes_are_flat():
+    sched = gs.Scheduler([("A", 8)], "topology_aware")
+    node = sched.snapshot()["nodes"][0]
+    assert node["topology"] == "flat"
+    assert all(g["nvlink_group"] == 0 and g["numa_id"] == 0 for g in node["gpus"])
+
+
+def test_ta_prefers_whole_nvlink_group():
+    sched = gs.Scheduler(DUAL_A, "topology_aware")
+    hold = sched.submit("hold", 2, duration=20)
+    assert hold["success"]
+    assert hold["placement"][0]["gpu_indices"] == [0, 1]
+
+    result = sched.submit("train", 4, duration=10)
+    assert result["success"]
+    assert result["placement"][0]["gpu_indices"] == [4, 5, 6, 7]
+    assert sched.metrics()["cross_nvlink_jobs"] == 0
+
+
+def test_ff_crosses_nvlink_on_same_state():
+    sched = gs.Scheduler(DUAL_A, "first_fit")
+    assert sched.submit("hold", 2, duration=20)["success"]
+    result = sched.submit("train", 4, duration=10)
+    assert result["success"]
+    assert result["placement"][0]["gpu_indices"] == [2, 3, 4, 5]
+    assert sched.metrics()["cross_nvlink_jobs"] == 1
+    assert sched.metrics()["cross_numa_jobs"] == 1
+
+
+def test_ta_waits_on_intra_fragmentation_then_starts():
+    sched = gs.Scheduler(DUAL_A, "topology_aware")
+    assert sched.submit("a", 2, duration=20)["success"]
+    assert sched.submit("b", 2, duration=20)["success"]
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["a"]["placement"][0]["gpu_indices"] == [0, 1]
+    assert jobs["b"]["placement"][0]["gpu_indices"] == [4, 5]
+
+    result = sched.submit("train", 4, duration=10)
+    assert result["success"] is False
+    assert "机内碎片" in result["reason"]
+    assert sched.snapshot()["jobs"][-1]["state"] == "pending"
+    assert sched.metrics()["fragmentation_pending"] == 1
+
+    assert sched.finish("a")
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["train"]["state"] == "running"
+    assert jobs["train"]["placement"][0]["gpu_indices"] == [0, 1, 2, 3]
+
+
+def test_ta_eight_gpu_does_not_wait_on_dual_numa():
+    sched = gs.Scheduler(DUAL_A, "topology_aware")
+    result = sched.submit("full", 8, duration=5)
+    assert result["success"]
+    assert result["placement"][0]["gpu_indices"] == [0, 1, 2, 3, 4, 5, 6, 7]
+    assert sched.metrics()["cross_nvlink_jobs"] == 1
+    assert sched.metrics()["cross_numa_jobs"] == 1
+
+
+def test_quota_orthogonal_on_dual_numa():
+    nodes = [
+        {"id": f"node-{x}", "gpu_count": 8, "topology": "dual_numa8"} for x in "ABCD"
+    ]
+    sched = gs.Scheduler(nodes, "topology_aware", True, QUOTA_QUEUES)
+    assert sched.submit("res-a", 8, duration=20, queue_id="research")["success"]
+    assert sched.submit("res-b", 8, duration=20, queue_id="research")["success"]
+    extra = sched.submit("res-extra", 8, duration=8, queue_id="research")
+    assert extra["success"] is False
+    assert "配额不足" in extra["reason"]
+    assert sched.metrics()["fair_share_pending"] == 1
+    assert sched.metrics()["fragmentation_pending"] == 0
+
+    intra = gs.Scheduler(DUAL_A, "topology_aware", True, [("research", 16)])
+    intra.submit("a", 2, duration=20, queue_id="research")
+    intra.submit("b", 2, duration=20, queue_id="research")
+    result = intra.submit("train", 4, duration=10, queue_id="research")
+    assert result["success"] is False
+    assert "机内碎片" in result["reason"]
+    assert intra.metrics()["fair_share_pending"] == 0
+    assert intra.metrics()["fragmentation_pending"] == 1
+
+
+def test_preemption_prefers_whole_nvlink_group_victim():
+    sched = gs.Scheduler(DUAL_A, "topology_aware", True)
+    assert sched.submit("low-a", 2, duration=20, priority=0)["success"]
+    assert sched.submit("low-b", 2, duration=20, priority=0)["success"]
+    assert sched.submit("low-c", 1, duration=20, priority=0)["success"]
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["low-a"]["placement"][0]["gpu_indices"] == [0, 1]
+    assert jobs["low-b"]["placement"][0]["gpu_indices"] == [4, 5]
+    assert jobs["low-c"]["placement"][0]["gpu_indices"] == [2]
+
+    result = sched.submit("urgent", 4, duration=3, priority=10)
+    assert result["success"]
+    assert result["victims"] == ["low-b"]
+    assert result["placement"][0]["gpu_indices"] == [4, 5, 6, 7]
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["urgent"]["state"] == "running"
+    assert jobs["low-b"]["state"] == "preempted"
+    assert jobs["low-a"]["state"] == "running"
+
+
+def test_philly_workload_loads_and_simulates():
+    cluster = load_json("cluster_philly.json")
+    workload = load_json("jobs_philly.json")
+    assert len(workload["jobs"]) == 200
+    assert all(j["gpu_request"] in {1, 2, 4, 8} for j in workload["jobs"])
+    queues = [(q["id"], q["gpu_quota"]) for q in workload["queues"]]
+    result = gs.simulate(
+        nodes_from(cluster), workload["jobs"], "first_fit", True, queues
+    )
+    metrics = result["metrics"]
+    assert metrics["finished_count"] + metrics["running_count"] + metrics["pending_count"] == 200
+    assert metrics["makespan"] > 0
+    by_id = {q["id"]: q for q in result["final_snapshot"]["queues"]}
+    assert all(q["used_gpus"] <= q["gpu_quota"] for q in by_id.values())
+
+
+def test_nvlink_workload_compare_ta_stays_in_group():
+    cluster = load_json("cluster_4x8_dual_numa.json")
+    workload = load_json("jobs_nvlink.json")
+    nodes = nodes_from(cluster)
+    ff = gs.simulate(nodes, workload["jobs"], "first_fit")
+    ta = gs.simulate(nodes, workload["jobs"], "topology_aware")
+    assert ta["metrics"]["cross_nvlink_jobs"] == 0
+    assert ff["metrics"]["cross_nvlink_jobs"] > 0
+
+
+def test_simulate_snapshot_keeps_tp_pp():
+    cluster = load_json("cluster_4x8_dual_numa.json")
+    workload = load_json("jobs_parallel.json")
+    ta = gs.simulate(nodes_from(cluster), workload["jobs"], "topology_aware")
+    by_id = {j["id"]: j["parallelism"] for j in ta["final_snapshot"]["jobs"]}
+    assert by_id["tp-4"] == "tp"
+    assert by_id["pp-8"] == "pp"
+    assert by_id["dp-8"] == "dp"
+    live = {j["id"]: j["parallelism"] for j in ta["timeline"][-1]["jobs"]}
+    assert live["tp-4"] == "tp"
+    assert live["pp-8"] == "pp"
+
+
+def test_default_parallelism_is_dp():
+    sched = gs.Scheduler(DUAL_A, "topology_aware")
+    hold = sched.submit("hold", 2, duration=20)
+    assert hold["success"]
+    result = sched.submit("train", 4, duration=10)
+    assert result["success"]
+    assert result["placement"][0]["gpu_indices"] == [4, 5, 6, 7]
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["train"]["parallelism"] == "dp"
+
+
+def test_tp_stays_in_nvlink_group_ff_crosses():
+    ta = gs.Scheduler(DUAL_A, "topology_aware")
+    ff = gs.Scheduler(DUAL_A, "first_fit")
+    assert ta.submit("hold", 2, duration=20)["success"]
+    assert ff.submit("hold", 2, duration=20)["success"]
+
+    ta_r = ta.submit("train", 4, duration=10, parallelism="tp")
+    ff_r = ff.submit("train", 4, duration=10, parallelism="tp")
+    assert ta_r["success"]
+    assert ta_r["placement"][0]["gpu_indices"] == [4, 5, 6, 7]
+    assert "TP" in ta_r["reason"]
+    assert ff_r["success"]
+    assert ff_r["placement"][0]["gpu_indices"] == [2, 3, 4, 5]
+    assert ff.metrics()["cross_nvlink_jobs"] == 1
+    assert ta.metrics()["cross_nvlink_jobs"] == 0
+
+
+def test_tp_waits_for_whole_group_then_starts():
+    sched = gs.Scheduler(DUAL_A, "topology_aware")
+    assert sched.submit("a", 2, duration=20)["success"]
+    assert sched.submit("b", 2, duration=20)["success"]
+    result = sched.submit("train", 4, duration=10, parallelism="tp")
+    assert result["success"] is False
+    assert "NVLink" in result["reason"]
+    assert sched.snapshot()["jobs"][-1]["state"] == "pending"
+
+    assert sched.finish("a")
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["train"]["state"] == "running"
+    assert jobs["train"]["placement"][0]["gpu_indices"] == [0, 1, 2, 3]
+
+
+def test_tp_eight_rejected_on_dual_numa_ok_on_flat():
+    dual = gs.Scheduler(DUAL_A, "topology_aware")
+    result = dual.submit("full", 8, duration=5, parallelism="tp")
+    assert result["success"] is False
+    assert "超过最大 NVLink 组容量" in result["reason"]
+    assert dual.snapshot()["jobs"] == []
+
+    flat = gs.Scheduler([{"id": "A", "gpu_count": 8, "topology": "flat"}], "topology_aware")
+    ok = flat.submit("full", 8, duration=5, parallelism="tp")
+    assert ok["success"]
+    assert ok["placement"][0]["gpu_indices"] == [0, 1, 2, 3, 4, 5, 6, 7]
+
+
+def test_pp_places_adjacent_while_dp_waits():
+    nodes = [{"id": x, "gpu_count": 8, "topology": "dual_numa8"} for x in "ABCD"]
+    sched = gs.Scheduler(nodes, "topology_aware")
+    for name in "ABCD":
+        assert sched.submit(f"pin-{name}", 1, duration=20)["success"]
+    for name in "ABCD":
+        assert sched.submit(f"fill-{name}", 3, duration=20)["success"]
+
+    dp = sched.submit("dp-8", 8, duration=10, parallelism="dp")
+    assert dp["success"] is False
+    assert "碎片" in dp["reason"] or "跨" in dp["reason"]
+
+    pp = sched.submit("pp-8", 8, duration=10, parallelism="pp")
+    assert pp["success"]
+    node_ids = [p["node_id"] for p in pp["placement"]]
+    order = list("ABCD")
+    idxs = [order.index(n) for n in node_ids]
+    assert idxs == list(range(idxs[0], idxs[0] + len(idxs)))
+    assert "PP" in pp["reason"]
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["dp-8"]["state"] == "pending"
+    assert jobs["dp-8"]["parallelism"] == "dp"
+    assert jobs["pp-8"]["state"] == "running"
+    assert jobs["pp-8"]["parallelism"] == "pp"
+
+
+def test_tp_preemption_prefers_whole_group_victim():
+    sched = gs.Scheduler(DUAL_A, "topology_aware", True)
+    assert sched.submit("low-a", 2, duration=20, priority=0)["success"]
+    assert sched.submit("low-b", 2, duration=20, priority=0)["success"]
+    assert sched.submit("low-c", 1, duration=20, priority=0)["success"]
+
+    result = sched.submit("urgent", 4, duration=3, priority=10, parallelism="tp")
+    assert result["success"]
+    assert result["victims"] == ["low-b"]
+    assert result["placement"][0]["gpu_indices"] == [4, 5, 6, 7]
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["urgent"]["state"] == "running"
+    assert jobs["low-b"]["state"] == "preempted"
+    assert jobs["low-a"]["state"] == "running"
+
+
+def test_unknown_parallelism_is_rejected():
+    sched = gs.Scheduler(DUAL_A, "topology_aware")
+    result = sched.submit("bad", 4, duration=5, parallelism="ep")
+    assert result["success"] is False
+    assert "未知并行方式" in result["reason"]
+    assert sched.snapshot()["jobs"] == []
