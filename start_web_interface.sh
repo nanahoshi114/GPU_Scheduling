@@ -48,6 +48,16 @@ if [[ "${REBUILD}" -eq 1 ]]; then
   need_install=1
 elif ! python -c "import gpu_scheduler, uvicorn" >/dev/null 2>&1; then
   need_install=1
+else
+  so="$(python -c 'import gpu_scheduler, pathlib; print(pathlib.Path(gpu_scheduler.__file__))')"
+  for f in "${ROOT}"/cpp/src/*.cpp "${ROOT}"/cpp/include/*.h; do
+    [[ -e "${f}" ]] || continue
+    if [[ "${f}" -nt "${so}" ]]; then
+      echo "C++ 源新于已安装扩展，重新编译..."
+      need_install=1
+      break
+    fi
+  done
 fi
 
 if [[ "${need_install}" -eq 1 ]]; then
