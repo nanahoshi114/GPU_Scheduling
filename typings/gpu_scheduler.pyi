@@ -1,5 +1,8 @@
 from typing import Any, Iterable, Mapping, Sequence
 
+# Node mapping keys: id / node_id, gpu_count / gpus, optional topology
+# (flat | nvswitch8 | dual_numa8 | pair4). Tuples (id, gpu_count) stay flat.
+
 class Scheduler:
     def __init__(
         self,
@@ -16,6 +19,7 @@ class Scheduler:
         arrival_time: int | None = None,
         priority: int = 0,
         queue_id: str = "default",
+        parallelism: str = "dp",
     ) -> dict[str, Any]: ...
     def finish(self, job_id: str) -> bool: ...
     def tick(self) -> dict[str, Any]: ...
