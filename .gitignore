@@ -11,3 +11,5 @@ __pycache__/
 venv/
 CMakeUserPresets.json
 .cache/
+ms.md
+third_party/philly-traces/
