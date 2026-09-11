@@ -8,11 +8,20 @@ enum class JobState { Pending, Running, Preempted, Finished };
 struct Gpu {
     int index = 0;
     std::string occupier;  // empty if free
+    int nvlink_group = 0;
+    int numa_id = 0;
 };
 
 struct Node {
     std::string id;
+    std::string topology = "flat";
     std::vector<Gpu> gpus;
+};
+
+struct NodeInit {
+    std::string id;
+    int gpu_count = 0;
+    std::string topology = "flat";
 };
 
 struct NodeAllocation {
@@ -38,6 +47,11 @@ struct QueueView {
     int running_count = 0;
 };
 
+struct PlaceRequest {
+    int gpu_request = 0;
+    std::string parallelism = "dp";  // dp | tp | pp
+};
+
 struct JobSpec {
     std::string id;
     int gpu_request = 0;
@@ -45,6 +59,7 @@ struct JobSpec {
     int arrival_time = 0;
     int priority = 0;
     std::string queue_id = "default";
+    std::string parallelism = "dp";
 };
 
 struct Job {
@@ -54,6 +69,7 @@ struct Job {
     int duration = 10;
     int priority = 0;
     std::string queue_id = "default";
+    std::string parallelism = "dp";
     JobState state = JobState::Pending;
     Placement placement;
     std::string reason;
@@ -75,10 +91,13 @@ struct ScheduleResult {
 struct GpuView {
     int index = 0;
     std::string job_id;  // empty if free
+    int nvlink_group = 0;
+    int numa_id = 0;
 };
 
 struct NodeView {
     std::string id;
+    std::string topology = "flat";
     int gpu_count = 0;
     int free_count = 0;
     std::vector<GpuView> gpus;
@@ -91,6 +110,7 @@ struct JobView {
     int arrival_time = 0;
     int priority = 0;
     std::string queue_id;
+    std::string parallelism;
     std::string state;
     int start_time = -1;
     int finish_time = -1;
@@ -110,6 +130,8 @@ struct Metrics {
     int finished_count = 0;
     double avg_wait_time = 0.0;
     int cross_node_jobs = 0;
+    int cross_nvlink_jobs = 0;
+    int cross_numa_jobs = 0;
     int total_gpus = 0;
     int used_gpus = 0;
     int makespan = 0;

@@ -145,6 +145,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .subhead { margin: 16px 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .node-editor { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .node-row { display: grid; grid-template-columns: 1fr 90px 32px; gap: 8px; }
+.node-row-topo { grid-template-columns: 1fr 72px 118px 32px; }
 .node-row button { padding: 0; }
 .queue-bars { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 .queue-bar { display: flex; flex-direction: column; gap: 4px; }
@@ -177,6 +178,18 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   font-size: 12px;
   margin-bottom: 8px;
 }
+.gpu-groups { display: flex; flex-direction: column; gap: 8px; }
+.gpu-group { display: flex; align-items: center; gap: 6px; }
+.gpu-group-label {
+  font-size: 10px;
+  color: var(--muted);
+  min-width: 28px;
+  letter-spacing: 0.02em;
+}
+.gpu-group[data-group="0"] .gpu:not(.busy) { border-color: rgba(62, 224, 196, 0.4); }
+.gpu-group[data-group="1"] .gpu:not(.busy) { border-color: rgba(110, 168, 255, 0.4); }
+.gpu-group[data-group="2"] .gpu:not(.busy) { border-color: rgba(255, 200, 87, 0.4); }
+.gpu-group[data-group="3"] .gpu:not(.busy) { border-color: rgba(192, 132, 252, 0.4); }
 .gpus { display: flex; flex-wrap: wrap; gap: 6px; }
 .gpu {
   width: 34px;

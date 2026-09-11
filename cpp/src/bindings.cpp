@@ -33,6 +33,8 @@ py::dict metrics_to_dict(const Metrics& m) {
     d["finished_count"] = m.finished_count;
     d["avg_wait_time"] = m.avg_wait_time;
     d["cross_node_jobs"] = m.cross_node_jobs;
+    d["cross_nvlink_jobs"] = m.cross_nvlink_jobs;
+    d["cross_numa_jobs"] = m.cross_numa_jobs;
     d["total_gpus"] = m.total_gpus;
     d["used_gpus"] = m.used_gpus;
     d["makespan"] = m.makespan;
@@ -52,6 +54,7 @@ py::dict job_to_dict(const JobView& j) {
     d["arrival_time"] = j.arrival_time;
     d["priority"] = j.priority;
     d["queue_id"] = j.queue_id;
+    d["parallelism"] = j.parallelism;
     d["state"] = j.state;
     d["start_time"] = j.start_time;
     d["finish_time"] = j.finish_time;
@@ -72,6 +75,7 @@ py::dict snapshot_to_dict(const Snapshot& s) {
     for (const auto& n : s.nodes) {
         py::dict nd;
         nd["id"] = n.id;
+        nd["topology"] = n.topology;
         nd["gpu_count"] = n.gpu_count;
         nd["free_count"] = n.free_count;
         py::list gpus;
@@ -79,6 +83,8 @@ py::dict snapshot_to_dict(const Snapshot& s) {
             py::dict gd;
             gd["index"] = g.index;
             gd["job_id"] = g.job_id;
+            gd["nvlink_group"] = g.nvlink_group;
+            gd["numa_id"] = g.numa_id;
             gpus.append(gd);
         }
         nd["gpus"] = gpus;
@@ -126,29 +132,35 @@ py::dict simulation_to_dict(const SimulationResult& r) {
     return d;
 }
 
-std::vector<std::pair<std::string, int>> parse_nodes(const py::object& nodes) {
-    std::vector<std::pair<std::string, int>> out;
+std::vector<NodeInit> parse_nodes(const py::object& nodes) {
+    std::vector<NodeInit> out;
     for (auto item : nodes) {
         py::handle h = item;
+        NodeInit spec;
         if (py::isinstance<py::dict>(h)) {
             auto d = h.cast<py::dict>();
-            std::string id;
-            int gpus = 0;
             if (d.contains("id")) {
-                id = d["id"].cast<std::string>();
+                spec.id = d["id"].cast<std::string>();
             } else if (d.contains("node_id")) {
-                id = d["node_id"].cast<std::string>();
+                spec.id = d["node_id"].cast<std::string>();
             }
             if (d.contains("gpu_count")) {
-                gpus = d["gpu_count"].cast<int>();
+                spec.gpu_count = d["gpu_count"].cast<int>();
             } else if (d.contains("gpus")) {
-                gpus = d["gpus"].cast<int>();
+                spec.gpu_count = d["gpus"].cast<int>();
             }
-            out.emplace_back(id, gpus);
+            if (d.contains("topology")) {
+                spec.topology = d["topology"].cast<std::string>();
+            }
         } else {
             auto t = h.cast<py::tuple>();
-            out.emplace_back(t[0].cast<std::string>(), t[1].cast<int>());
+            spec.id = t[0].cast<std::string>();
+            spec.gpu_count = t[1].cast<int>();
+            if (t.size() > 2) {
+                spec.topology = t[2].cast<std::string>();
+            }
         }
+        out.push_back(std::move(spec));
     }
     return out;
 }
@@ -202,6 +214,11 @@ JobSpec parse_job_spec(const py::dict& d, int default_arrival) {
     } else {
         spec.arrival_time = default_arrival;
     }
+    if (d.contains("parallelism")) {
+        spec.parallelism = d["parallelism"].cast<std::string>();
+    } else if (d.contains("parallel")) {
+        spec.parallelism = d["parallel"].cast<std::string>();
+    }
     return spec;
 }
 
@@ -222,7 +239,8 @@ PYBIND11_MODULE(gpu_scheduler, m) {
             "submit",
             [](Scheduler& self, py::object job_or_id, py::object gpu_request = py::none(),
                int duration = 10, py::object arrival_time = py::none(), int priority = 0,
-               const std::string& queue_id = "default") {
+               const std::string& queue_id = "default",
+               const std::string& parallelism = "dp") {
                 JobSpec spec;
                 if (py::isinstance<py::dict>(job_or_id)) {
                     spec = parse_job_spec(job_or_id.cast<py::dict>(), self.current_time());
@@ -235,6 +253,7 @@ PYBIND11_MODULE(gpu_scheduler, m) {
                     spec.duration = duration;
                     spec.priority = priority;
                     spec.queue_id = queue_id;
+                    spec.parallelism = parallelism;
                     spec.arrival_time =
                         arrival_time.is_none() ? self.current_time() : arrival_time.cast<int>();
                 }
@@ -242,7 +261,7 @@ PYBIND11_MODULE(gpu_scheduler, m) {
             },
             py::arg("job_or_id"), py::arg("gpu_request") = py::none(), py::arg("duration") = 10,
             py::arg("arrival_time") = py::none(), py::arg("priority") = 0,
-            py::arg("queue_id") = "default")
+            py::arg("queue_id") = "default", py::arg("parallelism") = "dp")
         .def("finish", &Scheduler::finish, py::arg("job_id"))
         .def("tick", [](Scheduler& self) { return snapshot_to_dict(self.tick()); })
         .def("snapshot", [](const Scheduler& self) { return snapshot_to_dict(self.snapshot()); })

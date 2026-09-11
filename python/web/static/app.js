@@ -23,10 +23,24 @@ function fmtNum(x) {
   return Number.isInteger(x) ? String(x) : x.toFixed(2);
 }
 
-function placementText(job) {
+function nvlinkLabel(node, indices) {
+  if (!node || !node.gpus) return "";
+  const groups = [
+    ...new Set(
+      indices.map((i) => {
+        const g = node.gpus.find((x) => x.index === i);
+        return g ? (g.nvlink_group ?? 0) : 0;
+      })
+    ),
+  ];
+  return ` (nvlink ${groups.join("+")})`;
+}
+
+function placementText(job, nodes) {
   if (!job.placement || job.placement.length === 0) return "—";
+  const byId = Object.fromEntries((nodes || []).map((n) => [n.id, n]));
   return job.placement
-    .map((p) => `${p.node_id}: GPU ${p.gpu_indices.join(",")}`)
+    .map((p) => `${p.node_id}: GPU ${p.gpu_indices.join(",")}${nvlinkLabel(byId[p.node_id], p.gpu_indices)}`)
     .join("； ");
 }
 
@@ -147,15 +161,22 @@ let nodeRows = [];
 let queueRows = [];
 let sessionQueues = [];
 
+const TOPOLOGIES = ["flat", "nvswitch8", "dual_numa8", "pair4"];
+
 function renderNodeEditor() {
   const root = $("#node-editor");
   root.innerHTML = "";
   nodeRows.forEach((row, idx) => {
     const div = document.createElement("div");
-    div.className = "node-row";
+    div.className = "node-row node-row-topo";
+    const topo = row.topology || "flat";
+    const opts = TOPOLOGIES.map(
+      (t) => `<option value="${t}" ${t === topo ? "selected" : ""}>${t}</option>`
+    ).join("");
     div.innerHTML = `
       <input data-k="id" value="${row.id}" />
       <input data-k="gpu_count" type="number" min="1" value="${row.gpu_count}" />
+      <select data-k="topology">${opts}</select>
       <button class="ghost" data-del="${idx}" title="删除">×</button>
     `;
     div.querySelector('[data-k="id"]').addEventListener("input", (e) => {
@@ -163,6 +184,9 @@ function renderNodeEditor() {
     });
     div.querySelector('[data-k="gpu_count"]').addEventListener("input", (e) => {
       nodeRows[idx].gpu_count = Number(e.target.value);
+    });
+    div.querySelector('[data-k="topology"]').addEventListener("change", (e) => {
+      nodeRows[idx].topology = e.target.value;
     });
     div.querySelector("[data-del]").addEventListener("click", () => {
       nodeRows.splice(idx, 1);
@@ -249,7 +273,11 @@ function renderQueueBars(queues, root = $("#queue-bars")) {
 function applyClusterPreset(id) {
   const c = presets.clusters.find((x) => x.id === id);
   if (!c) return;
-  nodeRows = c.nodes.map((n) => ({ id: n.id, gpu_count: n.gpu_count }));
+  nodeRows = c.nodes.map((n) => ({
+    id: n.id,
+    gpu_count: n.gpu_count,
+    topology: n.topology || "flat",
+  }));
   queueRows = defaultQueueRows();
   renderNodeEditor();
   renderQueueEditor();
@@ -261,6 +289,8 @@ function renderMetrics(m, time) {
   $("#m-pending").textContent = m.pending_count;
   $("#m-wait").textContent = fmtNum(m.avg_wait_time);
   $("#m-cross").textContent = m.cross_node_jobs;
+  if ($("#m-nvlink")) $("#m-nvlink").textContent = m.cross_nvlink_jobs ?? 0;
+  if ($("#m-numa")) $("#m-numa").textContent = m.cross_numa_jobs ?? 0;
   $("#m-preemptions").textContent = m.total_preemptions;
   $("#m-used").textContent = `${m.used_gpus} / ${m.total_gpus}`;
   if ($("#m-fair")) $("#m-fair").textContent = m.fair_share_pending ?? 0;
@@ -278,18 +308,40 @@ function renderCluster(snapshot, root = $("#cluster-view"), emptyText = "请先�
   snapshot.nodes.forEach((node) => {
     const card = document.createElement("div");
     card.className = "node-card";
-    card.innerHTML = `<header><span>${node.id}</span><span>空闲 ${node.free_count}/${node.gpu_count}</span></header>`;
-    const gpus = document.createElement("div");
-    gpus.className = "gpus";
+    const topo = node.topology && node.topology !== "flat" ? ` · ${node.topology}` : "";
+    card.innerHTML = `<header><span>${node.id}${topo}</span><span>空闲 ${node.free_count}/${node.gpu_count}</span></header>`;
+    const groups = new Map();
     node.gpus.forEach((g) => {
-      const cell = document.createElement("div");
-      cell.className = "gpu" + (g.job_id ? " busy" : "");
-      cell.textContent = g.job_id ? g.job_id.replace(/^job-/, "") : `G${g.index}`;
-      cell.title = g.job_id ? `${node.id} GPU ${g.index} ← ${g.job_id}` : `${node.id} GPU ${g.index} 空闲`;
-      if (g.job_id) cell.style.background = colorFor(g.job_id);
-      gpus.appendChild(cell);
+      const key = g.nvlink_group ?? 0;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(g);
     });
-    card.appendChild(gpus);
+    const wrap = document.createElement("div");
+    wrap.className = "gpu-groups";
+    groups.forEach((list, gid) => {
+      const row = document.createElement("div");
+      row.className = "gpu-group";
+      row.dataset.group = String(gid);
+      const label = document.createElement("span");
+      label.className = "gpu-group-label";
+      label.textContent = `NV${gid}`;
+      row.appendChild(label);
+      const gpus = document.createElement("div");
+      gpus.className = "gpus";
+      list.forEach((g) => {
+        const cell = document.createElement("div");
+        cell.className = "gpu" + (g.job_id ? " busy" : "");
+        cell.textContent = g.job_id ? g.job_id.replace(/^job-/, "") : `G${g.index}`;
+        cell.title = g.job_id
+          ? `${node.id} GPU ${g.index} ← ${g.job_id} (nvlink ${g.nvlink_group ?? 0})`
+          : `${node.id} GPU ${g.index} 空闲 (nvlink ${g.nvlink_group ?? 0})`;
+        if (g.job_id) cell.style.background = colorFor(g.job_id);
+        gpus.appendChild(cell);
+      });
+      row.appendChild(gpus);
+      wrap.appendChild(row);
+    });
+    card.appendChild(wrap);
     root.appendChild(card);
   });
 }
@@ -308,8 +360,9 @@ function renderJobs(snapshot, tbody = $("#job-table"), { interactive = true } = 
       <td>${job.queue_id || "default"}</td>
       <td>P${job.priority}</td>
       <td>${job.gpu_request}</td>
+      <td>${(job.parallelism || "dp").toUpperCase()}</td>
       <td><span class="badge ${job.state}">${job.state}</span></td>
-      <td>${placementText(job)}</td>
+      <td>${placementText(job, snapshot?.nodes)}</td>
       <td>${fmtNum(job.wait_time)}</td>
       <td>${job.remaining_duration}</td>
       <td>${job.preemption_count}</td>
@@ -351,6 +404,8 @@ function metricsBlock(title, m, other) {
     ["峰值等待任务", m.max_pending, "max_pending", false],
     ["平均等待时间", fmtNum(m.avg_wait_time), "avg_wait_time", false],
     ["跨 Node GPU 任务数", m.cross_node_jobs, "cross_node_jobs", false],
+    ["跨 NVLink 任务", m.cross_nvlink_jobs ?? 0, "cross_nvlink_jobs", false],
+    ["跨 NUMA 任务", m.cross_numa_jobs ?? 0, "cross_numa_jobs", false],
     ["累计抢占次数", m.total_preemptions, "total_preemptions", false],
     ["公平份额等待", m.fair_share_pending ?? 0, "fair_share_pending", false],
     ["碎片等待", m.fragmentation_pending ?? 0, "fragmentation_pending", false],
@@ -382,7 +437,7 @@ function pinCompareJobLists() {
   });
 }
 
-function jobTable(jobs) {
+function jobTable(jobs, nodes) {
   const rows = jobs
     .map(
       (j) => `<tr>
@@ -390,9 +445,10 @@ function jobTable(jobs) {
         <td>${j.queue_id || "default"}</td>
         <td>P${j.priority}</td>
         <td>${j.gpu_request}</td>
+        <td>${(j.parallelism || "dp").toUpperCase()}</td>
         <td><span class="badge ${j.state}">${j.state}</span></td>
         <td>${j.nodes_used}</td>
-        <td>${placementText(j)}</td>
+        <td>${placementText(j, nodes)}</td>
         <td>${j.remaining_duration}</td>
         <td>${j.preemption_count}</td>
         <td class="reason-cell">${j.reason || ""}</td>
@@ -400,7 +456,7 @@ function jobTable(jobs) {
     )
     .join("");
   return `<div class="table-wrap job-list-clip"><table>
-    <thead><tr><th>任务</th><th>队列</th><th>优先级</th><th>GPU</th><th>状态</th><th>跨节点数</th><th>分配</th><th>剩余</th><th>抢占次数</th><th>原因</th></tr></thead>
+    <thead><tr><th>任务</th><th>队列</th><th>优先级</th><th>GPU</th><th>并行</th><th>状态</th><th>跨节点数</th><th>分配</th><th>剩余</th><th>抢占次数</th><th>原因</th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
 }
@@ -418,12 +474,12 @@ function renderCompare(data) {
         <div class="queue-bars">${(ff.final_snapshot.queues || []).map((q) =>
           `<div class="queue-bar"><div class="meta"><span>${q.id}</span><span>${q.used_gpus} / ${q.gpu_quota} · 等待 ${q.pending_count}</span></div></div>`
         ).join("")}</div>
-        ${jobTable(ff.final_snapshot.jobs)}</div>
+        ${jobTable(ff.final_snapshot.jobs, ff.final_snapshot.nodes)}</div>
       <div class="card"><h2>Topology-aware 分配结果</h2>
         <div class="queue-bars">${(ta.final_snapshot.queues || []).map((q) =>
           `<div class="queue-bar"><div class="meta"><span>${q.id}</span><span>${q.used_gpus} / ${q.gpu_quota} · 等待 ${q.pending_count}</span></div></div>`
         ).join("")}</div>
-        ${jobTable(ta.final_snapshot.jobs)}</div>
+        ${jobTable(ta.final_snapshot.jobs, ta.final_snapshot.nodes)}</div>
     </div>
   `;
   pinCompareJobLists();
@@ -440,7 +496,7 @@ function snapshotAt(timeline, t, fallback) {
 }
 
 function liveLine(m) {
-  return `利用率 ${fmtPct(m.gpu_utilization)} · 等待 ${m.pending_count} · 公平份额 ${m.fair_share_pending ?? 0} · 碎片 ${m.fragmentation_pending ?? 0} · 跨节点 ${m.cross_node_jobs} · 抢占 ${m.total_preemptions} · 已用 ${m.used_gpus}/${m.total_gpus}`;
+  return `利用率 ${fmtPct(m.gpu_utilization)} · 等待 ${m.pending_count} · 公平份额 ${m.fair_share_pending ?? 0} · 碎片 ${m.fragmentation_pending ?? 0} · 跨节点 ${m.cross_node_jobs} · 跨NVLink ${m.cross_nvlink_jobs ?? 0} · 跨NUMA ${m.cross_numa_jobs ?? 0} · 抢占 ${m.total_preemptions} · 已用 ${m.used_gpus}/${m.total_gpus}`;
 }
 
 function ensureLiveLayout(manual) {
@@ -459,7 +515,7 @@ function ensureLiveLayout(manual) {
         <div class="table-wrap job-list-clip" style="margin-top:12px">
           <table>
             <thead>
-              <tr><th>任务</th><th>队列</th><th>优先级</th><th>GPU</th><th>状态</th><th>节点 / GPU</th><th>等待</th><th>剩余</th><th>抢占次数</th><th>原因</th><th></th></tr>
+              <tr><th>任务</th><th>队列</th><th>优先级</th><th>GPU</th><th>并行</th><th>状态</th><th>节点 / GPU</th><th>等待</th><th>剩余</th><th>抢占次数</th><th>原因</th><th></th></tr>
             </thead>
             <tbody id="cmp-ff-jobs"></tbody>
           </table>
@@ -473,7 +529,7 @@ function ensureLiveLayout(manual) {
         <div class="table-wrap job-list-clip" style="margin-top:12px">
           <table>
             <thead>
-              <tr><th>任务</th><th>队列</th><th>优先级</th><th>GPU</th><th>状态</th><th>节点 / GPU</th><th>等待</th><th>剩余</th><th>抢占次数</th><th>原因</th><th></th></tr>
+              <tr><th>任务</th><th>队列</th><th>优先级</th><th>GPU</th><th>并行</th><th>状态</th><th>节点 / GPU</th><th>等待</th><th>剩余</th><th>抢占次数</th><th>原因</th><th></th></tr>
             </thead>
             <tbody id="cmp-ta-jobs"></tbody>
           </table>
@@ -589,7 +645,7 @@ $$(".tab").forEach((btn) => {
 $("#cluster-preset").addEventListener("change", (e) => applyClusterPreset(e.target.value));
 $("#add-node").addEventListener("click", () => {
   const n = nodeRows.length + 1;
-  nodeRows.push({ id: `node-${n}`, gpu_count: 8 });
+  nodeRows.push({ id: `node-${n}`, gpu_count: 8, topology: "flat" });
   renderNodeEditor();
 });
 
@@ -634,6 +690,7 @@ $("#submit-job").addEventListener("click", async () => {
       duration: Number($("#job-duration").value),
       priority: Number($("#job-priority").value),
       queue_id: $("#job-queue").value || "default",
+      parallelism: $("#job-parallelism") ? $("#job-parallelism").value || "dp" : "dp",
     };
     const localError = validateJob(payload);
     if (localError) {

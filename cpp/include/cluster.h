@@ -7,7 +7,11 @@
 
 class Cluster {
 public:
-    void add_node(const std::string& id, int gpu_count);
+    void add_node(const std::string& id, int gpu_count, const std::string& topology = "");
+
+    std::vector<int> free_gpu_indices_by_topology(int node_idx) const;
+    int max_nvlink_group_size(int node_idx) const;
+    int max_nvlink_group_size() const;
 
     int total_gpus() const { return total_gpus_; }
     int used_gpus() const { return used_gpus_; }

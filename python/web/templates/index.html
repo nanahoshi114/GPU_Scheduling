@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GPU 拓扑感知调度器</title>
-  <link rel="stylesheet" href="/static/style.css?v=10" />
+  <link rel="stylesheet" href="/static/style.css?v=12" />
 </head>
 <body>
   <header class="top">
@@ -69,6 +69,13 @@
               <option value="default">default</option>
             </select>
           </label>
+          <label>并行方式
+            <select id="job-parallelism">
+              <option value="dp">DP 数据并行</option>
+              <option value="tp">TP 张量并行</option>
+              <option value="pp">PP 流水线</option>
+            </select>
+          </label>
           <div class="row">
             <button id="submit-job" class="primary">提交任务</button>
             <button id="tick" class="ghost">时间 +1</button>
@@ -83,6 +90,8 @@
             <div><span class="k">等待任务</span><span id="m-pending" class="v">—</span></div>
             <div><span class="k">平均等待</span><span id="m-wait" class="v">—</span></div>
             <div><span class="k">跨 Node 任务</span><span id="m-cross" class="v">—</span></div>
+            <div><span class="k">跨 NVLink</span><span id="m-nvlink" class="v">—</span></div>
+            <div><span class="k">跨 NUMA</span><span id="m-numa" class="v">—</span></div>
             <div><span class="k">累计抢占</span><span id="m-preemptions" class="v">—</span></div>
             <div><span class="k">已用 / 总量</span><span id="m-used" class="v">—</span></div>
             <div><span class="k">公平份额等待</span><span id="m-fair" class="v">—</span></div>
@@ -108,6 +117,7 @@
                 <th>队列</th>
                 <th>优先级</th>
                 <th>GPU</th>
+                <th>并行</th>
                 <th>状态</th>
                 <th>节点 / GPU</th>
                 <th>等待</th>
@@ -154,6 +164,6 @@
     </section>
   </main>
 
-  <script src="/static/app.js?v=10"></script>
+  <script src="/static/app.js?v=12"></script>
 </body>
 </html>

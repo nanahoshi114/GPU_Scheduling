@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <limits>
 
-SimulationResult Simulator::run(std::vector<std::pair<std::string, int>> nodes,
+SimulationResult Simulator::run(std::vector<NodeInit> nodes,
                                 const std::vector<JobSpec>& jobs,
                                 const std::string& strategy,
                                 bool enable_preemption,

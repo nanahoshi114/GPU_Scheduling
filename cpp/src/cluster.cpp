@@ -1,9 +1,34 @@
 #include "cluster.h"
 
 #include <algorithm>
+#include <map>
 #include <stdexcept>
+#include <unordered_map>
 
-void Cluster::add_node(const std::string& id, int gpu_count) {
+namespace {
+
+void apply_topology(Node& node, const std::string& topology) {
+    const std::string t = topology.empty() ? "flat" : topology;
+    node.topology = t;
+    const int n = static_cast<int>(node.gpus.size());
+    for (int i = 0; i < n; ++i) {
+        auto& gpu = node.gpus[static_cast<size_t>(i)];
+        gpu.nvlink_group = 0;
+        gpu.numa_id = 0;
+        if (t == "dual_numa8") {
+            if (i >= 4) {
+                gpu.nvlink_group = 1;
+                gpu.numa_id = 1;
+            }
+        } else if (t == "pair4") {
+            gpu.nvlink_group = i / 2;
+        }
+    }
+}
+
+}  // namespace
+
+void Cluster::add_node(const std::string& id, int gpu_count, const std::string& topology) {
     if (id.empty()) {
         throw std::invalid_argument("node id must not be empty");
     }
@@ -19,6 +44,7 @@ void Cluster::add_node(const std::string& id, int gpu_count) {
     for (int i = 0; i < gpu_count; ++i) {
         node.gpus[static_cast<size_t>(i)].index = i;
     }
+    apply_topology(node, topology);
     nodes_.push_back(std::move(node));
     total_gpus_ += gpu_count;
 }
@@ -52,6 +78,76 @@ std::vector<int> Cluster::free_gpu_indices(int node_idx) const {
         }
     }
     return out;
+}
+
+std::vector<int> Cluster::free_gpu_indices_by_topology(int node_idx) const {
+    std::vector<int> out;
+    if (node_idx < 0 || node_idx >= static_cast<int>(nodes_.size())) {
+        return out;
+    }
+    const auto& node = nodes_[static_cast<size_t>(node_idx)];
+
+    struct Bucket {
+        int group = 0;
+        int numa = 0;
+        std::vector<int> indices;
+    };
+    std::map<int, Bucket> by_group;
+    for (const auto& gpu : node.gpus) {
+        if (gpu.occupier.empty()) {
+            auto& bucket = by_group[gpu.nvlink_group];
+            bucket.group = gpu.nvlink_group;
+            bucket.numa = gpu.numa_id;
+            bucket.indices.push_back(gpu.index);
+        }
+    }
+    std::vector<Bucket> remaining;
+    remaining.reserve(by_group.size());
+    for (auto& kv : by_group) {
+        remaining.push_back(std::move(kv.second));
+    }
+
+    int prefer_numa = -1;
+    while (!remaining.empty()) {
+        auto it = std::max_element(
+            remaining.begin(), remaining.end(), [&](const Bucket& a, const Bucket& b) {
+                const bool a_same = prefer_numa < 0 || a.numa == prefer_numa;
+                const bool b_same = prefer_numa < 0 || b.numa == prefer_numa;
+                if (a_same != b_same) {
+                    return !a_same;
+                }
+                if (a.indices.size() != b.indices.size()) {
+                    return a.indices.size() < b.indices.size();
+                }
+                return a.group > b.group;
+            });
+        if (prefer_numa < 0) {
+            prefer_numa = it->numa;
+        }
+        out.insert(out.end(), it->indices.begin(), it->indices.end());
+        remaining.erase(it);
+    }
+    return out;
+}
+
+int Cluster::max_nvlink_group_size(int node_idx) const {
+    if (node_idx < 0 || node_idx >= static_cast<int>(nodes_.size())) {
+        return 1;
+    }
+    std::unordered_map<int, int> counts;
+    int m = 0;
+    for (const auto& gpu : nodes_[static_cast<size_t>(node_idx)].gpus) {
+        m = std::max(m, ++counts[gpu.nvlink_group]);
+    }
+    return std::max(1, m);
+}
+
+int Cluster::max_nvlink_group_size() const {
+    int m = 1;
+    for (int i = 0; i < static_cast<int>(nodes_.size()); ++i) {
+        m = std::max(m, max_nvlink_group_size(i));
+    }
+    return m;
 }
 
 int Cluster::free_count(int node_idx) const {
@@ -110,6 +206,7 @@ std::vector<NodeView> Cluster::view() const {
     for (const auto& node : nodes_) {
         NodeView nv;
         nv.id = node.id;
+        nv.topology = node.topology;
         nv.gpu_count = static_cast<int>(node.gpus.size());
         nv.free_count = 0;
         nv.gpus.reserve(node.gpus.size());
@@ -117,6 +214,8 @@ std::vector<NodeView> Cluster::view() const {
             GpuView gv;
             gv.index = gpu.index;
             gv.job_id = gpu.occupier;
+            gv.nvlink_group = gpu.nvlink_group;
+            gv.numa_id = gpu.numa_id;
             if (gpu.occupier.empty()) {
                 nv.free_count++;
             }

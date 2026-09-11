@@ -8,11 +8,12 @@
 #include <vector>
 
 // 放置策略入口。核心算法在 cpp/src/scheduler.cpp：
-// FirstFitStrategy（顺序填空闲卡）与 TopologyAwareStrategy（少跨节点 + 碎片等待）。
+// FirstFitStrategy（顺序填空闲卡，忽略并行方式）与
+// TopologyAwareStrategy（DP 少跨节点 / TP 同 NVLink 组 / PP 相邻节点）。
 class PlacementStrategy {
 public:
     virtual ~PlacementStrategy() = default;
-    virtual ScheduleResult try_place(const Cluster& cluster, int gpu_request,
+    virtual ScheduleResult try_place(const Cluster& cluster, const PlaceRequest& req,
                                      bool has_running) const = 0;
     virtual std::string name() const = 0;
 };
@@ -21,7 +22,7 @@ std::unique_ptr<PlacementStrategy> make_strategy(const std::string& name);
 
 class Scheduler {
 public:
-    Scheduler(std::vector<std::pair<std::string, int>> nodes, const std::string& strategy,
+    Scheduler(std::vector<NodeInit> nodes, const std::string& strategy,
               bool enable_preemption = true, std::vector<QueueSpec> queues = {});
 
     ScheduleResult submit(const JobSpec& spec);

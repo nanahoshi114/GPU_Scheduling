@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <functional>
 #include <limits>
+#include <map>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
@@ -11,10 +13,31 @@
 #include <unordered_set>
 #include <utility>
 
+std::string normalize_parallelism(const std::string& raw) {
+    std::string s = raw;
+    for (char& c : s) {
+        if (c >= 'A' && c <= 'Z') {
+            c = static_cast<char>(c - 'A' + 'a');
+        }
+    }
+    if (s.empty() || s == "dp" || s == "data") {
+        return "dp";
+    }
+    if (s == "tp" || s == "tensor") {
+        return "tp";
+    }
+    if (s == "pp" || s == "pipeline") {
+        return "pp";
+    }
+    return "";
+}
+
 namespace {
 
-// TopologyAware 打分权重：跨节点通信代价远高于碎片，优先少跨 Node。
+// TopologyAware 打分权重：跨 Node 必须最大，其次跨 NVLink 组，再跨 NUMA。
 constexpr int kWeightCross = 100;
+constexpr int kWeightNvlink = 40;
+constexpr int kWeightNuma = 15;
 constexpr int kWeightFrag = 10;
 constexpr int kWeightAwkward = 5;
 
@@ -34,10 +57,85 @@ int allocated_gpus(const Job& job) {
     return count;
 }
 
-// score = 100*(跨节点数) + 10*(部分占用节点数) + 5*(余量落在 3/5/6/7 的节点数)
+int count_nvlink_domains(const Cluster& cluster, const std::vector<NodeAllocation>& allocs) {
+    std::set<std::pair<std::string, int>> domains;
+    for (const auto& alloc : allocs) {
+        const int idx = cluster.node_index(alloc.node_id);
+        if (idx < 0) {
+            continue;
+        }
+        const auto& node = cluster.nodes()[static_cast<size_t>(idx)];
+        for (int g : alloc.gpu_indices) {
+            if (g >= 0 && g < static_cast<int>(node.gpus.size())) {
+                domains.insert({alloc.node_id, node.gpus[static_cast<size_t>(g)].nvlink_group});
+            }
+        }
+    }
+    return static_cast<int>(domains.size());
+}
+
+int count_numa_domains(const Cluster& cluster, const std::vector<NodeAllocation>& allocs) {
+    std::set<std::pair<std::string, int>> domains;
+    for (const auto& alloc : allocs) {
+        const int idx = cluster.node_index(alloc.node_id);
+        if (idx < 0) {
+            continue;
+        }
+        const auto& node = cluster.nodes()[static_cast<size_t>(idx)];
+        for (int g : alloc.gpu_indices) {
+            if (g >= 0 && g < static_cast<int>(node.gpus.size())) {
+                domains.insert({alloc.node_id, node.gpus[static_cast<size_t>(g)].numa_id});
+            }
+        }
+    }
+    return static_cast<int>(domains.size());
+}
+
+bool job_crosses_nvlink(const Cluster& cluster, const Job& job) {
+    for (const auto& alloc : job.placement.allocations) {
+        const int idx = cluster.node_index(alloc.node_id);
+        if (idx < 0) {
+            continue;
+        }
+        std::unordered_set<int> groups;
+        const auto& node = cluster.nodes()[static_cast<size_t>(idx)];
+        for (int g : alloc.gpu_indices) {
+            if (g >= 0 && g < static_cast<int>(node.gpus.size())) {
+                groups.insert(node.gpus[static_cast<size_t>(g)].nvlink_group);
+            }
+        }
+        if (groups.size() >= 2) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool job_crosses_numa(const Cluster& cluster, const Job& job) {
+    for (const auto& alloc : job.placement.allocations) {
+        const int idx = cluster.node_index(alloc.node_id);
+        if (idx < 0) {
+            continue;
+        }
+        std::unordered_set<int> numas;
+        const auto& node = cluster.nodes()[static_cast<size_t>(idx)];
+        for (int g : alloc.gpu_indices) {
+            if (g >= 0 && g < static_cast<int>(node.gpus.size())) {
+                numas.insert(node.gpus[static_cast<size_t>(g)].numa_id);
+            }
+        }
+        if (numas.size() >= 2) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// score = 100*(n_nodes-1) + 40*(n_nvlink-1) + 15*(n_numa-1) + 10*n_frag + 5*n_awkward
 int score_placement(const Cluster& cluster, const std::vector<NodeAllocation>& allocs) {
     const int n_nodes = static_cast<int>(allocs.size());
-    const int cross = std::max(0, n_nodes - 1);
+    const int n_nvlink = std::max(1, count_nvlink_domains(cluster, allocs));
+    const int n_numa = std::max(1, count_numa_domains(cluster, allocs));
     int n_frag = 0;
     int n_awkward = 0;
     for (const auto& alloc : allocs) {
@@ -52,7 +150,9 @@ int score_placement(const Cluster& cluster, const std::vector<NodeAllocation>& a
             n_awkward++;
         }
     }
-    return kWeightCross * cross + kWeightFrag * n_frag + kWeightAwkward * n_awkward;
+    return kWeightCross * std::max(0, n_nodes - 1) +
+           kWeightNvlink * (n_nvlink - 1) + kWeightNuma * (n_numa - 1) +
+           kWeightFrag * n_frag + kWeightAwkward * n_awkward;
 }
 
 // 在已选定的节点集合内，按空闲 GPU 从多到少填充，尽量先填满大节点。
@@ -76,19 +176,44 @@ Placement pack_largest_first(const Cluster& cluster, const std::vector<int>& nod
         if (remaining <= 0) {
             break;
         }
-        auto free_idxs = cluster.free_gpu_indices(item.idx);
+        auto free_idxs = cluster.free_gpu_indices_by_topology(item.idx);
         if (free_idxs.empty()) {
             continue;
         }
         const int take = std::min(remaining, static_cast<int>(free_idxs.size()));
         NodeAllocation alloc;
         alloc.node_id = cluster.nodes()[static_cast<size_t>(item.idx)].id;
-        alloc.gpu_indices.assign(free_idxs.begin(),
-                                 free_idxs.begin() + take);
+        alloc.gpu_indices.assign(free_idxs.begin(), free_idxs.begin() + take);
         p.allocations.push_back(std::move(alloc));
         remaining -= take;
     }
     return p;
+}
+
+Placement pack_in_node_order(const Cluster& cluster, int left, int right, int gpu_request) {
+    Placement p;
+    int remaining = gpu_request;
+    for (int idx = left; idx <= right && remaining > 0; ++idx) {
+        auto free_idxs = cluster.free_gpu_indices_by_topology(idx);
+        if (free_idxs.empty()) {
+            continue;
+        }
+        const int take = std::min(remaining, static_cast<int>(free_idxs.size()));
+        NodeAllocation alloc;
+        alloc.node_id = cluster.nodes()[static_cast<size_t>(idx)].id;
+        alloc.gpu_indices.assign(free_idxs.begin(), free_idxs.begin() + take);
+        p.allocations.push_back(std::move(alloc));
+        remaining -= take;
+    }
+    return p;
+}
+
+int placed_count(const Placement& p) {
+    int n = 0;
+    for (const auto& a : p.allocations) {
+        n += static_cast<int>(a.gpu_indices.size());
+    }
+    return n;
 }
 
 void foreach_combination(int n, int k, const std::function<void(const std::vector<int>&)>& cb) {
@@ -114,9 +239,10 @@ public:
     std::string name() const override { return "first_fit"; }
 
     // 基础策略：按 Node 定义顺序从头拿走空闲 GPU。总量够就立刻放置，不优化跨节点。
-    ScheduleResult try_place(const Cluster& cluster, int gpu_request,
+    ScheduleResult try_place(const Cluster& cluster, const PlaceRequest& req,
                              bool /*has_running*/) const override {
         ScheduleResult result;
+        const int gpu_request = req.gpu_request;
         if (gpu_request <= 0) {
             result.reason = "请求 GPU 数量必须为正";
             return result;
@@ -159,13 +285,17 @@ class TopologyAwareStrategy : public PlacementStrategy {
 public:
     std::string name() const override { return "topology_aware"; }
 
-    // 拓扑感知：先求当前最少跨 Node 数；若明显差于理想值且有任务在跑则等待；
-    // 否则在该节点数的组合中选碎片代价最低的放置。
-    ScheduleResult try_place(const Cluster& cluster, int gpu_request,
+    ScheduleResult try_place(const Cluster& cluster, const PlaceRequest& req,
                              bool has_running) const override {
         ScheduleResult result;
+        const int gpu_request = req.gpu_request;
         if (gpu_request <= 0) {
             result.reason = "请求 GPU 数量必须为正";
+            return result;
+        }
+        const std::string mode = normalize_parallelism(req.parallelism);
+        if (mode.empty()) {
+            result.reason = "未知并行方式";
             return result;
         }
         const int free = cluster.free_gpus();
@@ -174,6 +304,20 @@ public:
                             std::to_string(free) + "）";
             return result;
         }
+        if (mode == "tp") {
+            return place_tp(cluster, gpu_request, has_running);
+        }
+        if (mode == "pp") {
+            return place_pp(cluster, gpu_request, has_running);
+        }
+        return place_dp(cluster, gpu_request, has_running);
+    }
+
+private:
+    // DP：最少节点 + 跨 Node / 机内碎片等待（原 Topology-aware）。
+    ScheduleResult place_dp(const Cluster& cluster, int gpu_request, bool has_running) const {
+        ScheduleResult result;
+        const int free = cluster.free_gpus();
 
         struct Cand {
             int idx;
@@ -194,7 +338,6 @@ public:
         std::sort(candidates.begin(), candidates.end(),
                   [](const Cand& a, const Cand& b) { return a.free > b.free; });
 
-        // 贪心下界：用空闲最多的节点去覆盖请求，得到当前最少跨 Node 数。
         int covered = 0;
         int min_nodes = 0;
         for (const auto& c : candidates) {
@@ -211,10 +354,8 @@ public:
         }
 
         const int max_cap = std::max(1, cluster.max_node_capacity());
-        const int ideal_nodes =
-            (gpu_request + max_cap - 1) / max_cap;  // ceil(G / 单 Node 容量)
+        const int ideal_nodes = (gpu_request + max_cap - 1) / max_cap;
 
-        // 碎片等待：现在必须拆到比理想更多的节点，且稍后可能释放出整机，则先不调度。
         if (min_nodes > ideal_nodes && has_running) {
             result.reason = "资源碎片：需跨 " + std::to_string(min_nodes) +
                             " 个节点（理想 " + std::to_string(ideal_nodes) + "），等待集中放置";
@@ -223,7 +364,32 @@ public:
 
         const bool degraded = min_nodes > ideal_nodes && !has_running;
 
-        // Limit search space on large clusters: keep the roomiest nodes.
+        bool intra_degraded = false;
+        if (ideal_nodes == 1 && min_nodes == 1) {
+            bool any_ideal_group = false;
+            for (const auto& c : candidates) {
+                if (c.free < gpu_request) {
+                    continue;
+                }
+                Placement trial = pack_largest_first(cluster, {c.idx}, gpu_request);
+                const int nvl = count_nvlink_domains(cluster, trial.allocations);
+                const int max_group = cluster.max_nvlink_group_size(c.idx);
+                const int ideal_nvlink = (gpu_request + max_group - 1) / max_group;
+                if (nvl <= ideal_nvlink) {
+                    any_ideal_group = true;
+                    break;
+                }
+            }
+            if (!any_ideal_group) {
+                if (has_running) {
+                    result.reason = "机内碎片：" + std::to_string(gpu_request) +
+                                    " 卡需跨 NVLink 组，等待同组空出";
+                    return result;
+                }
+                intra_degraded = true;
+            }
+        }
+
         const int keep = std::min(static_cast<int>(candidates.size()),
                                   std::max(min_nodes + 6, 12));
         if (static_cast<int>(candidates.size()) > keep) {
@@ -247,14 +413,7 @@ public:
                 return;
             }
             Placement p = pack_largest_first(cluster, node_indices, gpu_request);
-            if (p.allocations.empty()) {
-                return;
-            }
-            int placed = 0;
-            for (const auto& a : p.allocations) {
-                placed += static_cast<int>(a.gpu_indices.size());
-            }
-            if (placed < gpu_request) {
+            if (placed_count(p) < gpu_request) {
                 return;
             }
             const int sc = score_placement(cluster, p.allocations);
@@ -265,10 +424,8 @@ public:
             }
         };
 
-        // 枚举恰好 min_nodes 个节点的组合，打分后取最低分。
         foreach_combination(n, min_nodes, consider);
         if (!found) {
-            // Fallback: greedy largest min_nodes.
             std::vector<int> greedy(static_cast<size_t>(min_nodes));
             for (int i = 0; i < min_nodes; ++i) {
                 greedy[static_cast<size_t>(i)] = i;
@@ -281,13 +438,143 @@ public:
             return result;
         }
 
-        if (degraded) {
+        if (degraded || intra_degraded) {
             best.reason = "Topology-aware：降级放置，避免死锁";
+        } else if (count_nvlink_domains(cluster, best.allocations) == 1) {
+            best.reason = "Topology-aware：DP 同一 NVLink 组";
         } else {
-            best.reason = "Topology-aware：最少节点放置";
+            best.reason = "Topology-aware：DP 最少节点放置";
         }
         result.success = true;
         result.placement = std::move(best);
+        result.reason = result.placement.reason;
+        return result;
+    }
+
+    // TP：整份请求必须落在同一个 NVLink 组。
+    ScheduleResult place_tp(const Cluster& cluster, int gpu_request, bool has_running) const {
+        ScheduleResult result;
+        const int max_group = cluster.max_nvlink_group_size();
+        if (gpu_request > max_group) {
+            result.reason = "TP 任务申请 " + std::to_string(gpu_request) +
+                            " GPU 超过最大 NVLink 组容量 " + std::to_string(max_group);
+            return result;
+        }
+
+        struct Bucket {
+            int node_idx;
+            int group;
+            int leftover;
+            std::vector<int> indices;
+        };
+        std::vector<Bucket> fit;
+        for (int i = 0; i < cluster.node_count(); ++i) {
+            const auto& node = cluster.nodes()[static_cast<size_t>(i)];
+            std::map<int, std::vector<int>> by_group;
+            for (const auto& gpu : node.gpus) {
+                if (gpu.occupier.empty()) {
+                    by_group[gpu.nvlink_group].push_back(gpu.index);
+                }
+            }
+            for (auto& kv : by_group) {
+                if (static_cast<int>(kv.second.size()) >= gpu_request) {
+                    Bucket b;
+                    b.node_idx = i;
+                    b.group = kv.first;
+                    b.leftover = static_cast<int>(kv.second.size()) - gpu_request;
+                    b.indices = std::move(kv.second);
+                    fit.push_back(std::move(b));
+                }
+            }
+        }
+
+        if (fit.empty()) {
+            if (has_running) {
+                result.reason = "TP 需同一 NVLink 组，等待同组空出";
+            } else {
+                result.reason = "未能找到可行放置";
+            }
+            return result;
+        }
+
+        std::sort(fit.begin(), fit.end(), [](const Bucket& a, const Bucket& b) {
+            if (a.leftover != b.leftover) {
+                return a.leftover < b.leftover;
+            }
+            if (a.node_idx != b.node_idx) {
+                return a.node_idx < b.node_idx;
+            }
+            return a.group < b.group;
+        });
+
+        const Bucket& best = fit.front();
+        Placement p;
+        NodeAllocation alloc;
+        alloc.node_id = cluster.nodes()[static_cast<size_t>(best.node_idx)].id;
+        alloc.gpu_indices.assign(best.indices.begin(),
+                                 best.indices.begin() + gpu_request);
+        p.allocations.push_back(std::move(alloc));
+        p.reason = "Topology-aware：TP 同一 NVLink 组";
+        result.success = true;
+        result.placement = std::move(p);
+        result.reason = result.placement.reason;
+        return result;
+    }
+
+    // PP：占用节点必须是集群下标上的连续窗口；不因 min_nodes > ideal 而等待。
+    ScheduleResult place_pp(const Cluster& cluster, int gpu_request, bool has_running) const {
+        ScheduleResult result;
+        const int n = cluster.node_count();
+        int best_span = std::numeric_limits<int>::max();
+        int best_left = -1;
+        for (int left = 0; left < n; ++left) {
+            if (cluster.free_count(left) <= 0) {
+                continue;
+            }
+            int sum = 0;
+            for (int right = left; right < n; ++right) {
+                const int f = cluster.free_count(right);
+                if (f <= 0) {
+                    break;
+                }
+                sum += f;
+                if (sum >= gpu_request) {
+                    const int span = right - left;
+                    if (span < best_span || (span == best_span && left < best_left)) {
+                        best_span = span;
+                        best_left = left;
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (best_left < 0) {
+            if (has_running) {
+                result.reason = "PP 需相邻节点，等待连续空位";
+            } else {
+                result.reason = "未能找到可行放置";
+            }
+            return result;
+        }
+
+        int right = best_left;
+        int sum = 0;
+        while (right < n) {
+            sum += cluster.free_count(right);
+            if (sum >= gpu_request) {
+                break;
+            }
+            ++right;
+        }
+        Placement p = pack_in_node_order(cluster, best_left, right, gpu_request);
+        if (placed_count(p) < gpu_request) {
+            result.reason = "未能找到可行放置";
+            return result;
+        }
+        p.reason = "Topology-aware：PP 相邻节点放置";
+        result.success = true;
+        result.placement = std::move(p);
         result.reason = result.placement.reason;
         return result;
     }
@@ -306,14 +593,14 @@ std::unique_ptr<PlacementStrategy> make_strategy(const std::string& name) {
                                 " (expected first_fit or topology_aware)");
 }
 
-Scheduler::Scheduler(std::vector<std::pair<std::string, int>> nodes, const std::string& strategy,
+Scheduler::Scheduler(std::vector<NodeInit> nodes, const std::string& strategy,
                      bool enable_preemption, std::vector<QueueSpec> queues)
     : enable_preemption_(enable_preemption) {
     if (nodes.empty()) {
         throw std::invalid_argument("cluster must contain at least one node");
     }
     for (const auto& n : nodes) {
-        cluster_.add_node(n.first, n.second);
+        cluster_.add_node(n.id, n.gpu_count, n.topology);
     }
     strategy_ = make_strategy(strategy);
     strategy_name_ = strategy_->name();
@@ -362,6 +649,20 @@ ScheduleResult Scheduler::submit(const JobSpec& spec) {
         return result;
     }
 
+    const std::string parallelism = normalize_parallelism(spec.parallelism);
+    if (parallelism.empty()) {
+        result.reason = "未知并行方式";
+        return result;
+    }
+    if (parallelism == "tp") {
+        const int max_group = cluster_.max_nvlink_group_size();
+        if (spec.gpu_request > max_group) {
+            result.reason = "TP 任务申请 " + std::to_string(spec.gpu_request) +
+                            " GPU 超过最大 NVLink 组容量 " + std::to_string(max_group);
+            return result;
+        }
+    }
+
     const std::string queue_id = spec.queue_id.empty() ? "default" : spec.queue_id;
     const QueueSpec* queue = find_queue(queue_id);
     if (queue == nullptr) {
@@ -381,6 +682,7 @@ ScheduleResult Scheduler::submit(const JobSpec& spec) {
     job.arrival_time = spec.arrival_time >= 0 ? spec.arrival_time : time_;
     job.priority = spec.priority;
     job.queue_id = queue_id;
+    job.parallelism = parallelism;
     job.state = JobState::Pending;
     job.remaining_duration = spec.duration;
     job.pending_since = time_;
@@ -553,7 +855,8 @@ ScheduleResult Scheduler::find_preemption_plan(const Job& incoming) const {
                     return;
                 }
                 auto placement = strategy_->try_place(
-                    trial, incoming.gpu_request, has_running_jobs(victim_ids));
+                    trial, PlaceRequest{incoming.gpu_request, incoming.parallelism},
+                    has_running_jobs(victim_ids));
                 if (!placement.success) {
                     return;
                 }
@@ -627,7 +930,8 @@ ScheduleResult Scheduler::try_schedule_job(Job& job) {
 
     ScheduleResult placed;
     if (quota_ok) {
-        placed = strategy_->try_place(cluster_, job.gpu_request, has_running_jobs());
+        placed = strategy_->try_place(
+            cluster_, PlaceRequest{job.gpu_request, job.parallelism}, has_running_jobs());
         if (placed.success) {
             apply_placement(job, placed);
             return placed;
@@ -673,6 +977,7 @@ JobView Scheduler::to_view(const Job& job) const {
     v.arrival_time = job.arrival_time;
     v.priority = job.priority;
     v.queue_id = job.queue_id;
+    v.parallelism = job.parallelism;
     switch (job.state) {
         case JobState::Pending:
             v.state = "pending";
@@ -756,12 +1061,24 @@ Metrics Scheduler::metrics_with_avg(double avg_utilization, int makespan, int ma
             if (job.placement.allocations.size() > 1) {
                 m.cross_node_jobs++;
             }
+            if (job_crosses_nvlink(cluster_, job)) {
+                m.cross_nvlink_jobs++;
+            }
+            if (job_crosses_numa(cluster_, job)) {
+                m.cross_numa_jobs++;
+            }
         } else {
             m.finished_count++;
             wait_sum += static_cast<double>(job.wait_time);
             wait_n++;
             if (job.placement.allocations.size() > 1) {
                 m.cross_node_jobs++;
+            }
+            if (job_crosses_nvlink(cluster_, job)) {
+                m.cross_nvlink_jobs++;
+            }
+            if (job_crosses_numa(cluster_, job)) {
+                m.cross_numa_jobs++;
             }
         }
     }

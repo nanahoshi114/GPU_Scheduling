@@ -115,6 +115,8 @@ def _friendly_exc(exc: BaseException) -> str:
     msg = str(exc)
     if "unknown strategy" in msg:
         return "未知策略，请选择 First Fit 或 Topology-aware"
+    if "未知并行方式" in msg:
+        return "未知并行方式，请选择 DP / TP / PP"
     if "cluster must contain at least one node" in msg:
         return "至少定义一个 Node"
     if "node id must not be empty" in msg:
@@ -159,6 +161,7 @@ async def unhandled_exception_handler(_request: Request, exc: Exception) -> JSON
 class NodeSpec(BaseModel):
     id: str
     gpu_count: int = Field(gt=0)
+    topology: str = "flat"
 
 
 class QueueSpec(BaseModel):
@@ -179,6 +182,7 @@ class JobRequest(BaseModel):
     duration: int = Field(default=10, gt=0)
     priority: int = Field(default=0, ge=0)
     queue_id: str = "default"
+    parallelism: str = "dp"
 
 
 class CompareRequest(BaseModel):
@@ -190,13 +194,24 @@ class CompareRequest(BaseModel):
     queues: Optional[list[QueueSpec]] = None
 
 
-def _cluster_nodes(req: CompareRequest) -> list[tuple[str, int]]:
+def _node_dicts(nodes: list[NodeSpec]) -> list[dict[str, Any]]:
+    return [{"id": n.id, "gpu_count": n.gpu_count, "topology": n.topology} for n in nodes]
+
+
+def _cluster_nodes(req: CompareRequest) -> list[dict[str, Any]]:
     if req.nodes:
-        return [(n.id, n.gpu_count) for n in req.nodes]
+        return _node_dicts(req.nodes)
     if req.cluster_id:
         for c in _presets()["clusters"]:
             if c["id"] == req.cluster_id:
-                return [(n["id"], n["gpu_count"]) for n in c["nodes"]]
+                return [
+                    {
+                        "id": n["id"],
+                        "gpu_count": n["gpu_count"],
+                        "topology": n.get("topology", "flat"),
+                    }
+                    for n in c["nodes"]
+                ]
         raise HTTPException(status_code=400, detail="找不到所选集群，请重新选择")
     raise HTTPException(status_code=400, detail="请选择集群和任务集")
 
@@ -210,6 +225,29 @@ def _job_list(req: CompareRequest) -> list[dict[str, Any]]:
                 return w["jobs"]
         raise HTTPException(status_code=400, detail="找不到所选任务集，请重新选择")
     raise HTTPException(status_code=400, detail="请选择集群和任务集")
+
+
+def _declared_parallelism(job: dict[str, Any]) -> str:
+    raw = job.get("parallelism") or job.get("parallel") or "dp"
+    return str(raw).strip().lower() or "dp"
+
+
+def _stamp_snapshot_parallelism(snapshot: dict[str, Any], lookup: dict[str, str]) -> None:
+    for job in snapshot.get("jobs") or []:
+        job_id = job.get("id")
+        if job_id in lookup:
+            job["parallelism"] = lookup[job_id]
+        else:
+            job.setdefault("parallelism", "dp")
+
+
+def _stamp_simulation_parallelism(sim: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[str, Any]:
+    lookup = {job["id"]: _declared_parallelism(job) for job in jobs if job.get("id")}
+    if sim.get("final_snapshot"):
+        _stamp_snapshot_parallelism(sim["final_snapshot"], lookup)
+    for snap in sim.get("timeline") or []:
+        _stamp_snapshot_parallelism(snap, lookup)
+    return sim
 
 
 def _queue_tuples(queues: Optional[list[QueueSpec]]) -> Optional[list[tuple[str, int]]]:
@@ -247,7 +285,7 @@ def api_session(req: SessionRequest) -> dict[str, Any]:
     global _scheduler
     if not req.nodes:
         raise HTTPException(status_code=400, detail="至少定义一个 Node")
-    nodes = [(n.id, n.gpu_count) for n in req.nodes]
+    nodes = _node_dicts(req.nodes)
     try:
         sched = gs.Scheduler(
             nodes, req.strategy, req.enable_preemption, _queue_tuples(req.queues)
@@ -276,6 +314,7 @@ def api_submit(req: JobRequest) -> dict[str, Any]:
             duration=req.duration,
             priority=req.priority,
             queue_id=req.queue_id,
+            parallelism=req.parallelism,
         )
         return {"result": result, "snapshot": sched.snapshot()}
 
@@ -306,4 +345,7 @@ def api_compare(req: CompareRequest) -> dict[str, Any]:
         ta = gs.simulate(nodes, jobs, "topology_aware", req.enable_preemption, queues)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=_friendly_exc(exc)) from exc
-    return {"first_fit": ff, "topology_aware": ta}
+    return {
+        "first_fit": _stamp_simulation_parallelism(ff, jobs),
+        "topology_aware": _stamp_simulation_parallelism(ta, jobs),
+    }
