@@ -146,6 +146,8 @@ Zone / IB Domain
 - **HiveD Cell**：把层次做成可分配的 buddy 单元，从机制上避免「8 张游离卡」。
 - **Kubernetes Topology Manager**：只在 **kubelet 节点内** 对齐 CPU / GPU / NIC；**集群调度器本身不知道拓扑**，所以可能调度到节点后被 Topology Manager 拒绝。Volcano / KAI 就是补这一层。
 
+本仓库若要把这一层做进模拟器，按第 9 节改，不要另开第三条策略。
+
 ### 路线 5：按并行模式放置（加分：DP / TP / PP）
 
 LLM 时代的主流：不是「G 张卡尽量少节点」，而是 **通信模式对齐拓扑**：
@@ -304,8 +306,9 @@ README 里的 Topology-aware 可以放进文献谱系：
 | First Fit | topology-agnostic 即时放置 |
 | Topology-aware | min-nodes + 碎片 / awkward 打分 + 碎片等待 |
 | 优先级 / 抢占 | Borg / K8s 经典；Koordinator 做到 gang 级 |
-| 未做多租户 Queue / Quota | HiveD VC + cell；Volcano Queue；Themis 公平份额 |
-| 未做 NVLink / PP / TP | 层次拓扑 / 通信对齐（加分主战场） |
+| 多租户 Queue / Quota | Philly 数量配额 + 队内抢占（已做）；HiveD cell 未做 |
+| 未做 NVLink / NVSwitch | 机内层次拓扑，改造方案见第 9 节 |
+| 未做 DP / TP / PP | 通信对齐放置，应叠在第 9 节模型上，不要先做 |
 | 未做超时放松 | Philly：等太久应降级跨节点 |
 | 未做迁移整理 | Gandiva |
 | awkward 固定集合 | 可升级为 FGD 式「相对负载分布的碎片」 |
@@ -324,7 +327,7 @@ README 里的 Topology-aware 可以放进文献谱系：
 4. **Themis NSDI’20** — 不做硬配额时，用 finish-time fairness 做租户间公平
 5. **FGD ATC’23** — 碎片怎么量化
 6. **CSUR 综述** + **KAI topology 文档** — 工业现状
-7. 有余力：**Pollux**（弹性）、LLM 通信对齐放置（TP / PP）
+7. 有余力：**Pollux**（弹性）、LLM 通信对齐放置（TP / PP，叠在第 9 节域模型上）
 
 ---
 
@@ -355,3 +358,210 @@ README 里的 Topology-aware 可以放进文献谱系：
 - Koordinator: https://koordinator.sh/
 - HAMi: https://github.com/Project-HAMi/HAMi
 - Philly traces: https://github.com/msr-fiddle/philly-traces
+
+---
+
+## 9. 改造指导：把 NVLink / NVSwitch 纳入调度
+
+题目加分「将 NVLink / NVSwitch 等 GPU 内部拓扑纳入调度」。Queue / Quota 已经完成，这一节按**当前代码结构**写改法，不重做租户层。
+
+### 9.1 现在缺什么
+
+当前模型里，Node 只是「一袋无差别 GPU」：
+
+- `Gpu` 只有 `index` + `occupier`（`cpp/include/types.h`）
+- `Cluster::add_node(id, gpu_count)`，JSON 只有 `{"id": "node-A", "gpu_count": 8}`
+- Topology-aware 只优化 **跨 Node 数**；节点内 `pack_largest_first` / First Fit 都是按 `free_gpu_indices` 从小到大拿走
+- 所以「同一台机器上 GPU 0–3 走 NVLink、0 和 4 只走 PCIe」对调度器不可见
+
+Queue / Quota **不要改语义**：配额仍按张数、抢占仍只在队内。机内拓扑只影响 **选哪几张卡**，对应 HiveD 的关注点分离：外层切蛋糕，内层做放置。
+
+First Fit **保持拓扑无关**，继续当基线。只扩展 `TopologyAwareStrategy`，不要加第三条策略名。
+
+抢占已经在 Cluster 副本上调用 `try_place`，策略改完后会自动拒绝「释放后仍跨 NVLink 域」的受害者组合，不必单独写一套抢占拓扑逻辑。
+
+### 9.2 机内拓扑用多深
+
+不做真实 NVML / `nvidia-smi topo`。模拟器里用 **两级域** 就够撑起 Demo，也和路线 4 的树对齐：
+
+```
+Node
+  └─ NUMA / PCIe 岛     （跨岛 = 走 CPU / PCIe，慢）
+       └─ NVLink 组      （组内 = NVLink 或 NVSwitch，快）
+            └─ GPU
+```
+
+典型 8 卡机用两种预设即可：
+
+| 预设 id | 结构 | 什么时候用 |
+| --- | --- | --- |
+| `nvswitch8`（默认） | 8 张卡一个 NVLink 组、一个 NUMA | 旧 `cluster_4x8.json` 不写拓扑时的行为，**现有测试应几乎不变** |
+| `dual_numa8` | NUMA0：GPU 0–3（一个 NVLink 组）；NUMA1：GPU 4–7（另一个） | 新演示集群，用来看出机内差异 |
+| `pair4` | 4 卡机：两组 NVLink pair（0–1、2–3） | 给 `cluster_mixed.json` 里的 4 卡节点 |
+
+`dual_numa8` 是加分项的主展示：4 卡任务应整段放进 0–3 或 4–7，而不是 2,3,4,5（跨 NUMA，只靠 PCIe）。
+
+**不要**在这一步做 DP / TP / PP。并行模式是下一档加分，应复用这里的域 id，而不是另造一套图。
+
+### 9.3 数据模型（向后兼容）
+
+在 `types.h` 给 GPU 打上域标签，Node 带拓扑预设名：
+
+```cpp
+struct Gpu {
+    int index = 0;
+    std::string occupier;
+    int nvlink_group = 0;  // 同一 Node 内，组号相同 = NVLink/NVSwitch 互通
+    int numa_id = 0;
+};
+
+struct Node {
+    std::string id;
+    std::string topology = "flat";  // flat | nvswitch8 | dual_numa8 | pair4 | custom
+    std::vector<Gpu> gpus;
+};
+```
+
+`Cluster::add_node` 建议扩成：
+
+```text
+add_node(id, gpu_count, topology = "")
+```
+
+- `topology` 为空或 `flat`：所有 GPU `nvlink_group = 0`、`numa_id = 0`（整机一块域）
+- 具名预设：按上表填 GPU 标签
+- 可选 `custom`：JSON 直接写每张卡的 `nvlink_group` / `numa_id`
+
+集群 JSON 新旧都能读：
+
+```json
+{"id": "node-A", "gpu_count": 8}
+{"id": "node-A", "gpu_count": 8, "topology": "dual_numa8"}
+```
+
+Python 绑定：`parse_nodes` 已能吃 `tuple` 和 `dict`（queue 同款）。给 dict 多认一个 `topology` 即可；`(id, gpu_count)` 仍走 `flat`。
+
+`NodeView` / snapshot 要带上每张卡的 `nvlink_group`、`numa_id`，以及节点的 `topology`，Web 才能上色。
+
+### 9.4 放置算法：只改 Topology-aware 的「节点内打包」和打分
+
+跨 Node 流程（最少节点数、碎片等待、组合枚举）**原样保留**。改两处。
+
+**（1）`pack_largest_first` 换成「先填满 NVLink 组」。**
+
+选定节点集合后，不要再 `free_gpu_indices` 取下标最小的 k 张。每个 Node 内：
+
+1. 把空闲 GPU 按 `nvlink_group` 分桶
+2. 桶按空闲数从大到小
+3. 先吃满一个组，不够再溢出到同 NUMA 的下一组，最后才跨 NUMA
+
+First Fit 继续按 GPU index 顺序拿，用来对比「机内也被打散」。
+
+**（2）打分加机内项，权重必须小于跨 Node。**
+
+现有：
+
+```text
+score = 100·(n_nodes − 1) + 10·n_frag + 5·n_awkward
+```
+
+改为（数字可微调，顺序不要乱）：
+
+```text
+score = 100·(n_nodes − 1)
+      +  40·(n_nvlink − 1)
+      +  15·(n_numa − 1)
+      +  10·n_frag
+      +   5·n_awkward
+```
+
+- `n_nvlink`：本次放置覆盖的 `(node_id, nvlink_group)` 个数
+- `n_numa`：覆盖的 `(node_id, numa_id)` 个数
+- 跨 Node 仍是主目标：2 节点同组一定差于 1 节点跨 NUMA
+
+**（3）碎片等待加一档「机内等待」，但更保守。**
+
+现有：`min_nodes > ideal_nodes && has_running` → 等整机。
+
+机内可以对称：
+
+- `ideal_nvlink = ceil(本节点上拿到的卡数 / 该节点最大 NVLink 组容量)`
+- 若已经能在理想节点数内放下，但 **每个候选节点都不得不跨 NVLink 组**，且有 running → 等
+- 没有 running → 降级跨组，避免死锁（与现逻辑一致）
+
+只对「单节点就能装下」的请求做机内等待（典型 2/4 卡）。8 卡打满整机时，`dual_numa8` 必然跨两个 NVLink 组，**不要等**。
+
+原因字符串建议写清，便于 Demo：
+
+- `Topology-aware：node-A GPU 4-7（同一 NVLink 组）`
+- `机内碎片：4 卡需跨 NUMA，等待同组空出`
+
+### 9.5 指标与展示
+
+`Metrics` 现有 `cross_node_jobs`。并列加：
+
+| 字段 | 含义 |
+| --- | --- |
+| `cross_nvlink_jobs` | 至少一个 Node 上占用了 ≥2 个 `nvlink_group` 的 running/finished 任务数 |
+| `cross_numa_jobs` | 同上，但按 `numa_id` |
+
+Web（`python/web/static/app.js` + `style.css`）：
+
+- 节点卡按 `nvlink_group` 分色或分组（0–3 / 4–7 两排），不要只画 8 个无差别方块
+- 放置文案带组号：`node-A: GPU 4,5,6,7 (nvlink 1)`
+- 策略对比表加一列「跨 NVLink 任务」
+
+Queue 条、配额编辑 **不动**。
+
+### 9.6 建议改哪些文件
+
+| 文件 | 改什么 |
+| --- | --- |
+| `cpp/include/types.h` | `Gpu` / `Node` / `NodeView` / `Metrics` 加域字段 |
+| `cpp/include/cluster.h` + `cpp/src/cluster.cpp` | `add_node` 应用拓扑预设；`free_gpu_indices` 可保留；新增按组列举空闲卡 |
+| `cpp/src/scheduler.cpp` | `pack_largest_first`、`score_placement`、可选机内等待、reason |
+| `cpp/src/bindings.cpp` | 解析 `topology`；snapshot 输出组号 |
+| `typings/gpu_scheduler.pyi` | nodes dict 允许 `topology` |
+| `python/web/app.py` | 集群校验放行 `topology` 字段 |
+| `python/web/static/app.js` / `style.css` | 节点编辑器可选拓扑预设；渲染分组 |
+| `data/cluster_4x8_dual_numa.json` | **新建**：4×8，每台 `dual_numa8` |
+| `data/jobs_nvlink.json` | **新建**：先占 0–1，再来 4 卡 / 2 卡，对比 FF vs TA |
+| `tests/test_scheduler.py` | 见 9.8 |
+| `README.md` | 去掉「不模拟 NVLink」这条限制，补预设与打分 |
+
+不改：`QueueSpec`、队内抢占、fair-share / fragmentation pending 计数。
+
+### 9.7 推荐实现顺序
+
+1. **模型 + 兼容。** 标签默认全 0；旧测试、旧 JSON 全绿。
+2. **节点内打包 + 打分。** 单测 `dual_numa8` 上 4 卡任务选整组。
+3. **机内等待。** 构造「每组只剩 2 卡」时 4 卡任务 TA 等待、FF 立刻跨组。
+4. **预设数据 + Web。** 新集群 / 新任务集；对比页能看出 `cross_nvlink_jobs`：TA → 0，FF → >0。
+5. 最后才考虑作业级 `affinity: preferred|required`。第一期全局「尽量少跨 NVLink」即可。
+
+### 9.8 最小测试（相对现有用例）
+
+现有 `test_topology_aware_*`、quota、抢占应继续通过（默认 `flat` / `nvswitch8`）。新增：
+
+1. **整组优先。** `dual_numa8` 节点先占 GPU 0–1；提交 4 卡 → TA 放到 4–7，不放到 2,3,4,5。
+2. **First Fit 对照。** 同一初始状态，FF 拿走 2,3,4,5（或 2,3 再溢出），`cross_nvlink_jobs == 1`。
+3. **机内等待。** 两组各占 2 卡、各剩 2 卡；4 卡 + 有 running → TA pending（原因含机内碎片）；`finish` 腾出一组后启动。
+4. **8 卡不误等。** `dual_numa8` 整机 8 卡请求必须立刻放（必然跨两个 NVLink 组）。
+5. **与 Quota 正交。** `jobs_quota.json` 换到 `dual_numa8` 集群：超配额仍是 fair-share pending；配额够但跨组才是 fragmentation。
+6. **抢占不绕过机内目标。** 高优先级 4 卡在副本上 `try_place`，若释放后仍只能跨 NUMA 且有更好的受害者（整组低优先级 4 卡），应抢后者。
+
+### 9.9 刻意不做
+
+- 不把 Queue 升级成 HiveD cell（「research 配额 = 两台 dual_numa 整机」）。那是租户层，已用数量配额交卷。
+- 不引入通信带宽矩阵、不模拟 NVLink 争用。域 id + 跨域计数足够讲清加分项。
+- 不在 First Fit 里偷偷选 NVLink，否则对比被抹平。
+- 不为这次改动重写 Web 交互页的 queue 编辑器。
+
+### 9.10 做完之后 Demo 怎么讲
+
+构造：一台 `dual_numa8`，先跑一个 2 卡任务占 GPU 0–1。再提交 4 卡训练任务。
+
+- First Fit：拿走 2,3,4,5 → 跨 NUMA，训练走 PCIe。
+- Topology-aware：放到 4–7 → 整组 NVLink；若 4–7 被占满而 2,3 和另一组碎片空着，则等待而不是跨组拼。
+
+一句话：**跨 Node 规则不变，Node 内部从「任意空闲下标」改成「尽量待在同一个 NVLink 组」。**
