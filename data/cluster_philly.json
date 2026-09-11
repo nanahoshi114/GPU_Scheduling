@@ -1,0 +1,67 @@
+{
+  "id": "cluster_philly",
+  "name": "Philly 缩放到 12 节点 / 72 卡",
+  "description": "从 Philly cluster_machine_list 抽取真实机器 id：8 台 8 GPU + 4 台 2 GPU。原始集群约 552 台 / 2490 卡，这里缩小以便模拟器回放。",
+  "nodes": [
+    {
+      "id": "m10",
+      "gpu_count": 8,
+      "topology": "flat"
+    },
+    {
+      "id": "m101",
+      "gpu_count": 8,
+      "topology": "flat"
+    },
+    {
+      "id": "m103",
+      "gpu_count": 8,
+      "topology": "flat"
+    },
+    {
+      "id": "m104",
+      "gpu_count": 8,
+      "topology": "flat"
+    },
+    {
+      "id": "m106",
+      "gpu_count": 8,
+      "topology": "flat"
+    },
+    {
+      "id": "m107",
+      "gpu_count": 8,
+      "topology": "flat"
+    },
+    {
+      "id": "m108",
+      "gpu_count": 8,
+      "topology": "flat"
+    },
+    {
+      "id": "m118",
+      "gpu_count": 8,
+      "topology": "flat"
+    },
+    {
+      "id": "m0",
+      "gpu_count": 2,
+      "topology": "flat"
+    },
+    {
+      "id": "m1",
+      "gpu_count": 2,
+      "topology": "flat"
+    },
+    {
+      "id": "m100",
+      "gpu_count": 2,
+      "topology": "flat"
+    },
+    {
+      "id": "m102",
+      "gpu_count": 2,
+      "topology": "flat"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "jobs_parallel",
+  "name": "DP / TP / PP 并行放置演示",
+  "description": "每台先占 1 卡。TP-4 整组；再填 3 卡后四台各剩 4 卡，DP-8 等待整机，PP-8 立刻占用相邻节点。First Fit 忽略并行方式。",
+  "jobs": [
+    {"id": "pin-a", "gpu_request": 1, "arrival_time": 0, "duration": 20, "priority": 0, "parallelism": "dp"},
+    {"id": "pin-b", "gpu_request": 1, "arrival_time": 0, "duration": 20, "priority": 0, "parallelism": "dp"},
+    {"id": "pin-c", "gpu_request": 1, "arrival_time": 0, "duration": 20, "priority": 0, "parallelism": "dp"},
+    {"id": "pin-d", "gpu_request": 1, "arrival_time": 0, "duration": 20, "priority": 0, "parallelism": "dp"},
+    {"id": "tp-4", "gpu_request": 4, "arrival_time": 1, "duration": 12, "priority": 0, "parallelism": "tp"},
+    {"id": "fill-b", "gpu_request": 3, "arrival_time": 2, "duration": 20, "priority": 0, "parallelism": "dp"},
+    {"id": "fill-c", "gpu_request": 3, "arrival_time": 2, "duration": 20, "priority": 0, "parallelism": "dp"},
+    {"id": "fill-d", "gpu_request": 3, "arrival_time": 2, "duration": 20, "priority": 0, "parallelism": "dp"},
+    {"id": "dp-8", "gpu_request": 8, "arrival_time": 3, "duration": 10, "priority": 0, "parallelism": "dp"},
+    {"id": "pp-8", "gpu_request": 8, "arrival_time": 3, "duration": 10, "priority": 0, "parallelism": "pp"}
+  ]
+}

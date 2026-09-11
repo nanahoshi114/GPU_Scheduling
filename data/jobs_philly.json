@@ -1,0 +1,1633 @@
+{
+  "id": "jobs_philly",
+  "name": "Philly 抽样 200 个训练任务",
+  "description": "Microsoft Philly ATC'19 作业日志抽样。取 12 小时最密窗口后抽样；时间按 15 分钟/tick 压缩，到达跨度 47 tick；GPU 配比 1/2/4/8 = 97/13/45/45；queue_id 为原 VC（其余并入 other）。",
+  "queues": [
+    {
+      "id": "ee9e8c",
+      "gpu_quota": 10
+    },
+    {
+      "id": "103959",
+      "gpu_quota": 8
+    },
+    {
+      "id": "11cb48",
+      "gpu_quota": 8
+    },
+    {
+      "id": "7f04ca",
+      "gpu_quota": 8
+    },
+    {
+      "id": "6214e9",
+      "gpu_quota": 8
+    },
+    {
+      "id": "other",
+      "gpu_quota": 30
+    }
+  ],
+  "jobs": [
+    {
+      "id": "philly-46064",
+      "gpu_request": 1,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46065",
+      "gpu_request": 1,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46074",
+      "gpu_request": 8,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "7f04ca"
+    },
+    {
+      "id": "philly-46077",
+      "gpu_request": 1,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46078",
+      "gpu_request": 1,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46080",
+      "gpu_request": 1,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46081",
+      "gpu_request": 1,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46087",
+      "gpu_request": 2,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46088",
+      "gpu_request": 1,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46090",
+      "gpu_request": 1,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46103",
+      "gpu_request": 1,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46108",
+      "gpu_request": 1,
+      "arrival_time": 0,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46114",
+      "gpu_request": 1,
+      "arrival_time": 1,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46117",
+      "gpu_request": 1,
+      "arrival_time": 1,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46118",
+      "gpu_request": 8,
+      "arrival_time": 1,
+      "duration": 21,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46120",
+      "gpu_request": 1,
+      "arrival_time": 1,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46123",
+      "gpu_request": 1,
+      "arrival_time": 1,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46128",
+      "gpu_request": 1,
+      "arrival_time": 1,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46130",
+      "gpu_request": 8,
+      "arrival_time": 1,
+      "duration": 4,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46137",
+      "gpu_request": 1,
+      "arrival_time": 1,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46142",
+      "gpu_request": 4,
+      "arrival_time": 1,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46146",
+      "gpu_request": 4,
+      "arrival_time": 1,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46147",
+      "gpu_request": 4,
+      "arrival_time": 1,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46149",
+      "gpu_request": 4,
+      "arrival_time": 1,
+      "duration": 16,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46152",
+      "gpu_request": 4,
+      "arrival_time": 1,
+      "duration": 16,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46161",
+      "gpu_request": 8,
+      "arrival_time": 2,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46167",
+      "gpu_request": 1,
+      "arrival_time": 2,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46173",
+      "gpu_request": 8,
+      "arrival_time": 3,
+      "duration": 8,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46175",
+      "gpu_request": 4,
+      "arrival_time": 3,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46179",
+      "gpu_request": 4,
+      "arrival_time": 3,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46181",
+      "gpu_request": 1,
+      "arrival_time": 3,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46184",
+      "gpu_request": 1,
+      "arrival_time": 4,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46189",
+      "gpu_request": 8,
+      "arrival_time": 4,
+      "duration": 10,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46190",
+      "gpu_request": 8,
+      "arrival_time": 4,
+      "duration": 34,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46192",
+      "gpu_request": 2,
+      "arrival_time": 4,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46203",
+      "gpu_request": 8,
+      "arrival_time": 5,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "7f04ca"
+    },
+    {
+      "id": "philly-46204",
+      "gpu_request": 8,
+      "arrival_time": 5,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "7f04ca"
+    },
+    {
+      "id": "philly-46214",
+      "gpu_request": 1,
+      "arrival_time": 5,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46215",
+      "gpu_request": 1,
+      "arrival_time": 5,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46218",
+      "gpu_request": 1,
+      "arrival_time": 5,
+      "duration": 5,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46224",
+      "gpu_request": 1,
+      "arrival_time": 6,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46227",
+      "gpu_request": 1,
+      "arrival_time": 6,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46231",
+      "gpu_request": 1,
+      "arrival_time": 6,
+      "duration": 9,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46232",
+      "gpu_request": 1,
+      "arrival_time": 6,
+      "duration": 9,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46233",
+      "gpu_request": 1,
+      "arrival_time": 6,
+      "duration": 9,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46238",
+      "gpu_request": 1,
+      "arrival_time": 7,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46240",
+      "gpu_request": 1,
+      "arrival_time": 7,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46243",
+      "gpu_request": 1,
+      "arrival_time": 7,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46251",
+      "gpu_request": 1,
+      "arrival_time": 7,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46252",
+      "gpu_request": 2,
+      "arrival_time": 7,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46265",
+      "gpu_request": 1,
+      "arrival_time": 7,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46269",
+      "gpu_request": 8,
+      "arrival_time": 7,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46272",
+      "gpu_request": 1,
+      "arrival_time": 7,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46274",
+      "gpu_request": 1,
+      "arrival_time": 7,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46276",
+      "gpu_request": 8,
+      "arrival_time": 7,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46282",
+      "gpu_request": 8,
+      "arrival_time": 8,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46283",
+      "gpu_request": 8,
+      "arrival_time": 8,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46284",
+      "gpu_request": 8,
+      "arrival_time": 8,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46287",
+      "gpu_request": 4,
+      "arrival_time": 8,
+      "duration": 16,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46289",
+      "gpu_request": 1,
+      "arrival_time": 8,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46290",
+      "gpu_request": 4,
+      "arrival_time": 8,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46292",
+      "gpu_request": 1,
+      "arrival_time": 8,
+      "duration": 7,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46294",
+      "gpu_request": 4,
+      "arrival_time": 8,
+      "duration": 6,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46295",
+      "gpu_request": 4,
+      "arrival_time": 8,
+      "duration": 6,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46296",
+      "gpu_request": 1,
+      "arrival_time": 8,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46300",
+      "gpu_request": 1,
+      "arrival_time": 8,
+      "duration": 7,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46317",
+      "gpu_request": 1,
+      "arrival_time": 10,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46318",
+      "gpu_request": 2,
+      "arrival_time": 10,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46322",
+      "gpu_request": 4,
+      "arrival_time": 10,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46324",
+      "gpu_request": 1,
+      "arrival_time": 11,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46326",
+      "gpu_request": 1,
+      "arrival_time": 11,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46328",
+      "gpu_request": 1,
+      "arrival_time": 11,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46336",
+      "gpu_request": 1,
+      "arrival_time": 11,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "7f04ca"
+    },
+    {
+      "id": "philly-46338",
+      "gpu_request": 1,
+      "arrival_time": 11,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46344",
+      "gpu_request": 8,
+      "arrival_time": 12,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "7f04ca"
+    },
+    {
+      "id": "philly-46346",
+      "gpu_request": 1,
+      "arrival_time": 12,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "7f04ca"
+    },
+    {
+      "id": "philly-46347",
+      "gpu_request": 1,
+      "arrival_time": 12,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46348",
+      "gpu_request": 1,
+      "arrival_time": 12,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46364",
+      "gpu_request": 8,
+      "arrival_time": 13,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "7f04ca"
+    },
+    {
+      "id": "philly-46376",
+      "gpu_request": 8,
+      "arrival_time": 13,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "7f04ca"
+    },
+    {
+      "id": "philly-46377",
+      "gpu_request": 8,
+      "arrival_time": 13,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46382",
+      "gpu_request": 8,
+      "arrival_time": 14,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46384",
+      "gpu_request": 1,
+      "arrival_time": 14,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46386",
+      "gpu_request": 1,
+      "arrival_time": 14,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46391",
+      "gpu_request": 2,
+      "arrival_time": 14,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46403",
+      "gpu_request": 8,
+      "arrival_time": 15,
+      "duration": 16,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46408",
+      "gpu_request": 1,
+      "arrival_time": 15,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46414",
+      "gpu_request": 1,
+      "arrival_time": 15,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46419",
+      "gpu_request": 8,
+      "arrival_time": 16,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46420",
+      "gpu_request": 8,
+      "arrival_time": 16,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46424",
+      "gpu_request": 4,
+      "arrival_time": 16,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46429",
+      "gpu_request": 4,
+      "arrival_time": 17,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46435",
+      "gpu_request": 1,
+      "arrival_time": 17,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46442",
+      "gpu_request": 1,
+      "arrival_time": 18,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46446",
+      "gpu_request": 8,
+      "arrival_time": 18,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46453",
+      "gpu_request": 1,
+      "arrival_time": 18,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46460",
+      "gpu_request": 8,
+      "arrival_time": 19,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46463",
+      "gpu_request": 2,
+      "arrival_time": 20,
+      "duration": 16,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46473",
+      "gpu_request": 4,
+      "arrival_time": 22,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46474",
+      "gpu_request": 1,
+      "arrival_time": 22,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46479",
+      "gpu_request": 1,
+      "arrival_time": 22,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46480",
+      "gpu_request": 1,
+      "arrival_time": 22,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46482",
+      "gpu_request": 1,
+      "arrival_time": 22,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46487",
+      "gpu_request": 1,
+      "arrival_time": 23,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46493",
+      "gpu_request": 8,
+      "arrival_time": 23,
+      "duration": 21,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46495",
+      "gpu_request": 4,
+      "arrival_time": 23,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46499",
+      "gpu_request": 8,
+      "arrival_time": 24,
+      "duration": 16,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46500",
+      "gpu_request": 8,
+      "arrival_time": 24,
+      "duration": 16,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46502",
+      "gpu_request": 2,
+      "arrival_time": 24,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46504",
+      "gpu_request": 1,
+      "arrival_time": 24,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46511",
+      "gpu_request": 1,
+      "arrival_time": 25,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46512",
+      "gpu_request": 1,
+      "arrival_time": 25,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46514",
+      "gpu_request": 4,
+      "arrival_time": 25,
+      "duration": 6,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46520",
+      "gpu_request": 1,
+      "arrival_time": 25,
+      "duration": 9,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46521",
+      "gpu_request": 1,
+      "arrival_time": 25,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46528",
+      "gpu_request": 1,
+      "arrival_time": 26,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46536",
+      "gpu_request": 1,
+      "arrival_time": 26,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46542",
+      "gpu_request": 1,
+      "arrival_time": 26,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46543",
+      "gpu_request": 1,
+      "arrival_time": 26,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46549",
+      "gpu_request": 1,
+      "arrival_time": 27,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46557",
+      "gpu_request": 1,
+      "arrival_time": 27,
+      "duration": 12,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46561",
+      "gpu_request": 8,
+      "arrival_time": 28,
+      "duration": 2,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46565",
+      "gpu_request": 8,
+      "arrival_time": 28,
+      "duration": 16,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46568",
+      "gpu_request": 4,
+      "arrival_time": 28,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46570",
+      "gpu_request": 4,
+      "arrival_time": 29,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46571",
+      "gpu_request": 1,
+      "arrival_time": 29,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46583",
+      "gpu_request": 4,
+      "arrival_time": 30,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46585",
+      "gpu_request": 1,
+      "arrival_time": 30,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46587",
+      "gpu_request": 4,
+      "arrival_time": 30,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46588",
+      "gpu_request": 1,
+      "arrival_time": 30,
+      "duration": 39,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46589",
+      "gpu_request": 1,
+      "arrival_time": 30,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46590",
+      "gpu_request": 1,
+      "arrival_time": 30,
+      "duration": 41,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46595",
+      "gpu_request": 1,
+      "arrival_time": 30,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46596",
+      "gpu_request": 8,
+      "arrival_time": 31,
+      "duration": 9,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46600",
+      "gpu_request": 4,
+      "arrival_time": 31,
+      "duration": 8,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46606",
+      "gpu_request": 1,
+      "arrival_time": 32,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46608",
+      "gpu_request": 4,
+      "arrival_time": 32,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46611",
+      "gpu_request": 1,
+      "arrival_time": 32,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46613",
+      "gpu_request": 8,
+      "arrival_time": 32,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46614",
+      "gpu_request": 1,
+      "arrival_time": 32,
+      "duration": 4,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46625",
+      "gpu_request": 1,
+      "arrival_time": 33,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46626",
+      "gpu_request": 8,
+      "arrival_time": 33,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "7f04ca"
+    },
+    {
+      "id": "philly-46631",
+      "gpu_request": 1,
+      "arrival_time": 33,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46643",
+      "gpu_request": 1,
+      "arrival_time": 34,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46647",
+      "gpu_request": 2,
+      "arrival_time": 34,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46662",
+      "gpu_request": 8,
+      "arrival_time": 35,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46665",
+      "gpu_request": 4,
+      "arrival_time": 35,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46666",
+      "gpu_request": 4,
+      "arrival_time": 35,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46672",
+      "gpu_request": 8,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46673",
+      "gpu_request": 1,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46674",
+      "gpu_request": 1,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46675",
+      "gpu_request": 1,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46676",
+      "gpu_request": 8,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46685",
+      "gpu_request": 4,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46688",
+      "gpu_request": 4,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46696",
+      "gpu_request": 4,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46698",
+      "gpu_request": 4,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46702",
+      "gpu_request": 4,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46703",
+      "gpu_request": 4,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46707",
+      "gpu_request": 4,
+      "arrival_time": 36,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46714",
+      "gpu_request": 1,
+      "arrival_time": 37,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46717",
+      "gpu_request": 4,
+      "arrival_time": 37,
+      "duration": 32,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46718",
+      "gpu_request": 4,
+      "arrival_time": 37,
+      "duration": 41,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46719",
+      "gpu_request": 4,
+      "arrival_time": 37,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46720",
+      "gpu_request": 4,
+      "arrival_time": 37,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46724",
+      "gpu_request": 4,
+      "arrival_time": 37,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46733",
+      "gpu_request": 8,
+      "arrival_time": 37,
+      "duration": 16,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46737",
+      "gpu_request": 1,
+      "arrival_time": 37,
+      "duration": 20,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46741",
+      "gpu_request": 1,
+      "arrival_time": 38,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46742",
+      "gpu_request": 4,
+      "arrival_time": 38,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46744",
+      "gpu_request": 8,
+      "arrival_time": 38,
+      "duration": 4,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46748",
+      "gpu_request": 1,
+      "arrival_time": 38,
+      "duration": 16,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46753",
+      "gpu_request": 1,
+      "arrival_time": 38,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46763",
+      "gpu_request": 1,
+      "arrival_time": 39,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46766",
+      "gpu_request": 2,
+      "arrival_time": 39,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46767",
+      "gpu_request": 1,
+      "arrival_time": 40,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46773",
+      "gpu_request": 8,
+      "arrival_time": 40,
+      "duration": 7,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    },
+    {
+      "id": "philly-46774",
+      "gpu_request": 1,
+      "arrival_time": 40,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46775",
+      "gpu_request": 4,
+      "arrival_time": 41,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46777",
+      "gpu_request": 4,
+      "arrival_time": 41,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46780",
+      "gpu_request": 8,
+      "arrival_time": 41,
+      "duration": 5,
+      "priority": 0,
+      "queue_id": "7f04ca"
+    },
+    {
+      "id": "philly-46781",
+      "gpu_request": 8,
+      "arrival_time": 41,
+      "duration": 5,
+      "priority": 0,
+      "queue_id": "7f04ca"
+    },
+    {
+      "id": "philly-46786",
+      "gpu_request": 4,
+      "arrival_time": 42,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46791",
+      "gpu_request": 4,
+      "arrival_time": 42,
+      "duration": 48,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46794",
+      "gpu_request": 8,
+      "arrival_time": 42,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46795",
+      "gpu_request": 8,
+      "arrival_time": 42,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46804",
+      "gpu_request": 1,
+      "arrival_time": 44,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46805",
+      "gpu_request": 2,
+      "arrival_time": 44,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "11cb48"
+    },
+    {
+      "id": "philly-46807",
+      "gpu_request": 1,
+      "arrival_time": 44,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46810",
+      "gpu_request": 1,
+      "arrival_time": 44,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46816",
+      "gpu_request": 8,
+      "arrival_time": 45,
+      "duration": 16,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46820",
+      "gpu_request": 2,
+      "arrival_time": 45,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46821",
+      "gpu_request": 2,
+      "arrival_time": 45,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46822",
+      "gpu_request": 2,
+      "arrival_time": 45,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46823",
+      "gpu_request": 4,
+      "arrival_time": 45,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46826",
+      "gpu_request": 1,
+      "arrival_time": 46,
+      "duration": 5,
+      "priority": 0,
+      "queue_id": "6214e9"
+    },
+    {
+      "id": "philly-46829",
+      "gpu_request": 4,
+      "arrival_time": 46,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46832",
+      "gpu_request": 8,
+      "arrival_time": 46,
+      "duration": 17,
+      "priority": 0,
+      "queue_id": "other"
+    },
+    {
+      "id": "philly-46837",
+      "gpu_request": 4,
+      "arrival_time": 47,
+      "duration": 1,
+      "priority": 0,
+      "queue_id": "103959"
+    },
+    {
+      "id": "philly-46838",
+      "gpu_request": 8,
+      "arrival_time": 47,
+      "duration": 3,
+      "priority": 0,
+      "queue_id": "ee9e8c"
+    }
+  ]
+}

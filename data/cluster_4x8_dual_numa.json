@@ -1,0 +1,11 @@
+{
+  "id": "cluster_4x8_dual_numa",
+  "name": "4 x 8 GPU（双 NUMA / NVLink）",
+  "description": "四台 8 GPU，每台 dual_numa8：GPU 0–3 与 4–7 各一组 NVLink。",
+  "nodes": [
+    {"id": "node-A", "gpu_count": 8, "topology": "dual_numa8"},
+    {"id": "node-B", "gpu_count": 8, "topology": "dual_numa8"},
+    {"id": "node-C", "gpu_count": 8, "topology": "dual_numa8"},
+    {"id": "node-D", "gpu_count": 8, "topology": "dual_numa8"}
+  ]
+}

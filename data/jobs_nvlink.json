@@ -1,0 +1,19 @@
+{
+  "id": "jobs_nvlink",
+  "name": "NVLink 机内拓扑演示",
+  "description": "12 个 1/2/4 卡任务。先占 GPU 0–1，再交错到达 4 卡训练与 2 卡推理；First Fit 跨组，Topology-aware 整组。",
+  "jobs": [
+    {"id": "hold-01", "gpu_request": 2, "arrival_time": 0, "duration": 20, "priority": 0},
+    {"id": "train-4a", "gpu_request": 4, "arrival_time": 1, "duration": 12, "priority": 0},
+    {"id": "infer-2a", "gpu_request": 2, "arrival_time": 2, "duration": 8, "priority": 0},
+    {"id": "hold-02", "gpu_request": 2, "arrival_time": 3, "duration": 16, "priority": 0},
+    {"id": "train-4b", "gpu_request": 4, "arrival_time": 3, "duration": 14, "priority": 0},
+    {"id": "infer-1a", "gpu_request": 1, "arrival_time": 4, "duration": 6, "priority": 0},
+    {"id": "infer-1b", "gpu_request": 1, "arrival_time": 4, "duration": 6, "priority": 0},
+    {"id": "train-4c", "gpu_request": 4, "arrival_time": 5, "duration": 10, "priority": 0},
+    {"id": "infer-2b", "gpu_request": 2, "arrival_time": 6, "duration": 9, "priority": 0},
+    {"id": "train-4d", "gpu_request": 4, "arrival_time": 8, "duration": 11, "priority": 0},
+    {"id": "infer-2c", "gpu_request": 2, "arrival_time": 10, "duration": 7, "priority": 0},
+    {"id": "train-4e", "gpu_request": 4, "arrival_time": 12, "duration": 8, "priority": 0}
+  ]
+}
