@@ -10,6 +10,7 @@ class Scheduler:
         strategy: str = "topology_aware",
         enable_preemption: bool = True,
         queues: Sequence[tuple[str, int] | Mapping[str, Any]] | None = None,
+        locality_timeout: int = 0,
     ) -> None: ...
     def submit(
         self,
@@ -31,6 +32,8 @@ class Scheduler:
     def strategy(self) -> str: ...
     @property
     def preemption_enabled(self) -> bool: ...
+    @property
+    def locality_timeout(self) -> int: ...
 
 def simulate(
     nodes: Sequence[tuple[str, int] | Mapping[str, Any]],
@@ -38,5 +41,6 @@ def simulate(
     strategy: str,
     enable_preemption: bool = True,
     queues: Sequence[tuple[str, int] | Mapping[str, Any]] | None = None,
+    locality_timeout: int = 0,
 ) -> dict[str, Any]: ...
 def strategies() -> list[str]: ...

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GPU 拓扑感知调度器</title>
-  <link rel="stylesheet" href="/static/style.css?v=12" />
+  <link rel="stylesheet" href="/static/style.css?v=13" />
 </head>
 <body>
   <header class="top">
@@ -36,6 +36,10 @@
             <input type="checkbox" id="enable-preemption" checked />
             允许高优先级任务抢占
           </label>
+          <label>本地性超时（tick）
+            <input id="locality-timeout" type="number" min="0" value="0" />
+          </label>
+          <p class="hint">Topology-aware 的 DP 等满该 tick 数后允许跨 Node / 跨 NVLink 组。0 表示永不放松。TP 不受影响。</p>
           <div id="node-editor" class="node-editor"></div>
           <div class="row">
             <button id="add-node" class="ghost">添加 Node</button>
@@ -147,6 +151,9 @@
             <input type="checkbox" id="cmp-preemption" checked />
             允许抢占
           </label>
+          <label>本地性超时（tick）
+            <input id="cmp-locality-timeout" type="number" min="0" value="0" />
+          </label>
           <label class="check">
             <input type="checkbox" id="cmp-visualize" />
             可视化实时模拟
@@ -164,6 +171,6 @@
     </section>
   </main>
 
-  <script src="/static/app.js?v=12"></script>
+  <script src="/static/app.js?v=13"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@
 - 提交、运行、结束多个 GPU 任务
 - 两种策略：**First Fit** 与自研 **Topology-aware**
 - 优先减少单个任务跨 Node 使用的 GPU 数量；Topology-aware 再尽量待在同一 NVLink 组
-- 处理 GPU 不足与碎片（不足则等待；过度跨 Node 或机内跨组时可推迟调度）
+- 处理 GPU 不足与碎片（不足则等待；过度跨 Node 或机内跨组时可推迟调度；可选本地性超时后降级）
 - 支持非负整数优先级，以及可开关的高优先级自动抢占
 - 被抢占任务保留剩余时长，稍后按优先级恢复运行
 - 多租户 Queue / 硬数量 Quota：超配额任务保持 pending（fair-share delay），抢占只发生在同一队列内
@@ -85,6 +85,7 @@ print(sched.snapshot())
 print(gs.simulate(nodes, [
     {"id": "j1", "gpu_request": 4, "arrival_time": 0, "duration": 5, "priority": 1, "queue_id": "prod"},
 ], "first_fit", True, [("research", 16), ("prod", 12), ("default", 4)])["metrics"])
+# Topology-aware 可设 locality_timeout=N：DP 等满 N tick 后允许跨 Node / 跨 NVLink 组（0=永不）
 ```
 
 ## 预设数据
@@ -162,6 +163,7 @@ python3 scripts/convert_philly.py
 
 4. **跨 Node 碎片等待**：理想节点数为「向上取整（G / 单 Node 容量）」。若当前最少跨 Node 数大于理想值，且仍有 running 任务，则暂不调度；若没有 running 则降级放置，避免死锁
 5. **机内碎片等待**（仅理想节点数为 1 的 2/4 卡）：`ideal_nvlink = ceil(本机拿卡数 / 该机最大组容量)`。已能在 1 节点放下，但每个候选都不得不跨组，且有 running → pending；无 running → 降级跨组。`dual_numa8` 上 8 卡 `ideal_nvlink=2`，**不要等**
+6. **本地性超时**（可选，默认 0 = 永不放松）：DP 在本段等待（`time - pending_since`）达到 `locality_timeout` 个 tick 后，关闭上面两扇等待门，允许跨 Node / 跨 NVLink 组降级放置（Philly 式 soft constraint）。TP 仍必须同一 NVLink 组。First Fit 忽略该参数。构造：`Scheduler(..., locality_timeout=3)`；Web 交互页 / 对比页可填。离散事件模拟会在超时时刻唤醒，不会直接跳到任务结束。下面五场景表均按默认 0 统计
 
 作业可声明并行方式（缺省 `dp`），Topology-aware 按通信模式对齐已有 Node / NVLink 域；First Fit 仍忽略该字段。
 
@@ -277,12 +279,12 @@ Web 交互页可编辑队列，或一键填入演示配额 `research 16 / prod 1
 ### Topology-aware 的劣势
 
 - **为本地性付排队和空转。** 场景 3 / 4：硬等待会让整机空着看大任务排队（Philly 的 fragmentation delay），First Fit 反而更高利用率、更短 makespan。场景 5 的真实抽样没有付这笔账——等待被 VC 配额主导，两种策略的利用率与 makespan 相同。
-- **没有超时放松。** 生产里 Philly 会在 2～3 分钟后允许跨机；这里只要还有 running 就坚持 \(k^*\)，短任务被大任务挡住时亏得更明显。
+- **默认不超时放松。** `locality_timeout=0` 时只要还有 running 就坚持 \(k^*\)。设成正数后，DP 等满该 tick 数会降级跨机 / 跨组（对齐 Philly 的 2～3 分钟放松）；TP 仍不放松。五场景表按默认 0。
 - **可能「等错了」。** 场景 3 里 First Fit 拆开 6 卡任务，歪打正着留出整机；Topology-aware 坚持一机一个 6 卡，8 卡任务多等一整段。Tiresias 的批评也在这里：永远压到最少机器会过度阻塞。
 - **搜索会截断。** 节点很多时只在最空闲的若干台上枚举组合，大规模集群上不是全局最优。
 - **不是 Megatron 三维网格。** 一个任务只选 DP / TP / PP 之一，不把 `tp×pp×dp` 拆成多层 rank，也不做通信矩阵 mapping。
 
-一句话：First Fit 是吞吐优先的即时装箱；Topology-aware 是通信优先的有界等待。碎片不重时后者近乎免费；碎片很重或任务很短时，应考虑超时降级或按通信量决定是否 consolidate（Tiresias / Philly）。
+一句话：First Fit 是吞吐优先的即时装箱；Topology-aware 是通信优先的有界等待。碎片不重时后者近乎免费；碎片很重或任务很短时，打开 `locality_timeout` 或按通信量决定是否 consolidate（Tiresias / Philly）。
 
 ## 项目结构
 

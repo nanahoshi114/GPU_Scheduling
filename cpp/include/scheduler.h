@@ -23,7 +23,8 @@ std::unique_ptr<PlacementStrategy> make_strategy(const std::string& name);
 class Scheduler {
 public:
     Scheduler(std::vector<NodeInit> nodes, const std::string& strategy,
-              bool enable_preemption = true, std::vector<QueueSpec> queues = {});
+              bool enable_preemption = true, std::vector<QueueSpec> queues = {},
+              int locality_timeout = 0);
 
     ScheduleResult submit(const JobSpec& spec);
     bool finish(const std::string& job_id);
@@ -39,6 +40,7 @@ public:
     int total_gpus() const { return cluster_.total_gpus(); }
     const std::string& strategy_name() const { return strategy_name_; }
     bool preemption_enabled() const { return enable_preemption_; }
+    int locality_timeout() const { return locality_timeout_; }
     const std::vector<Job>& jobs() const { return jobs_; }
     const std::vector<QueueSpec>& queues() const { return queues_; }
 
@@ -53,8 +55,11 @@ private:
     int time_ = 0;
     int max_pending_ = 0;
     bool enable_preemption_ = true;
+    int locality_timeout_ = 0;
 
     JobView to_view(const Job& job) const;
+    bool should_relax_locality(const Job& job) const;
+    PlaceRequest place_request_for(const Job& job) const;
     void apply_placement(Job& job, const ScheduleResult& result);
     ScheduleResult try_schedule_job(Job& job);
     ScheduleResult find_preemption_plan(const Job& incoming) const;

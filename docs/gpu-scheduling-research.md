@@ -309,7 +309,7 @@ README 里的 Topology-aware 可以放进文献谱系：
 | 多租户 Queue / Quota | Philly 数量配额 + 队内抢占（已做）；HiveD cell 未做 |
 | 未做 NVLink / NVSwitch | 机内层次拓扑，改造方案见第 9 节 |
 | 未做 DP / TP / PP | 通信对齐放置，应叠在第 9 节模型上，不要先做 |
-| 未做超时放松 | Philly：等太久应降级跨节点 |
+| 本地性超时（默认关闭） | Philly 式：DP 等满 `locality_timeout` tick 后降级跨 Node / 跨 NVLink 组；TP 不放松 |
 | 未做迁移整理 | Gandiva |
 | awkward 固定集合 | 可升级为 FGD 式「相对负载分布的碎片」 |
 

@@ -310,12 +310,13 @@ public:
         if (mode == "pp") {
             return place_pp(cluster, gpu_request, has_running);
         }
-        return place_dp(cluster, gpu_request, has_running);
+        return place_dp(cluster, gpu_request, has_running, req.relax_locality);
     }
 
 private:
     // DP：最少节点 + 跨 Node / 机内碎片等待（原 Topology-aware）。
-    ScheduleResult place_dp(const Cluster& cluster, int gpu_request, bool has_running) const {
+    ScheduleResult place_dp(const Cluster& cluster, int gpu_request, bool has_running,
+                            bool relax_locality) const {
         ScheduleResult result;
         const int free = cluster.free_gpus();
 
@@ -355,16 +356,19 @@ private:
 
         const int max_cap = std::max(1, cluster.max_node_capacity());
         const int ideal_nodes = (gpu_request + max_cap - 1) / max_cap;
+        const bool wait_for_locality = has_running && !relax_locality;
 
-        if (min_nodes > ideal_nodes && has_running) {
+        if (min_nodes > ideal_nodes && wait_for_locality) {
             result.reason = "资源碎片：需跨 " + std::to_string(min_nodes) +
                             " 个节点（理想 " + std::to_string(ideal_nodes) + "），等待集中放置";
             return result;
         }
 
-        const bool degraded = min_nodes > ideal_nodes && !has_running;
+        const bool degraded = min_nodes > ideal_nodes && !wait_for_locality;
+        const bool timeout_cross = degraded && relax_locality && has_running;
 
         bool intra_degraded = false;
+        bool timeout_intra = false;
         if (ideal_nodes == 1 && min_nodes == 1) {
             bool any_ideal_group = false;
             for (const auto& c : candidates) {
@@ -381,12 +385,13 @@ private:
                 }
             }
             if (!any_ideal_group) {
-                if (has_running) {
+                if (wait_for_locality) {
                     result.reason = "机内碎片：" + std::to_string(gpu_request) +
                                     " 卡需跨 NVLink 组，等待同组空出";
                     return result;
                 }
                 intra_degraded = true;
+                timeout_intra = relax_locality && has_running;
             }
         }
 
@@ -438,7 +443,11 @@ private:
             return result;
         }
 
-        if (degraded || intra_degraded) {
+        if (timeout_cross) {
+            best.reason = "Topology-aware：等待超时，允许跨 Node 放置";
+        } else if (timeout_intra) {
+            best.reason = "Topology-aware：等待超时，允许跨 NVLink 组";
+        } else if (degraded || intra_degraded) {
             best.reason = "Topology-aware：降级放置，避免死锁";
         } else if (count_nvlink_domains(cluster, best.allocations) == 1) {
             best.reason = "Topology-aware：DP 同一 NVLink 组";
@@ -594,8 +603,12 @@ std::unique_ptr<PlacementStrategy> make_strategy(const std::string& name) {
 }
 
 Scheduler::Scheduler(std::vector<NodeInit> nodes, const std::string& strategy,
-                     bool enable_preemption, std::vector<QueueSpec> queues)
-    : enable_preemption_(enable_preemption) {
+                     bool enable_preemption, std::vector<QueueSpec> queues,
+                     int locality_timeout)
+    : enable_preemption_(enable_preemption), locality_timeout_(locality_timeout) {
+    if (locality_timeout < 0) {
+        throw std::invalid_argument("locality_timeout 必须为非负整数");
+    }
     if (nodes.empty()) {
         throw std::invalid_argument("cluster must contain at least one node");
     }
@@ -855,8 +868,7 @@ ScheduleResult Scheduler::find_preemption_plan(const Job& incoming) const {
                     return;
                 }
                 auto placement = strategy_->try_place(
-                    trial, PlaceRequest{incoming.gpu_request, incoming.parallelism},
-                    has_running_jobs(victim_ids));
+                    trial, place_request_for(incoming), has_running_jobs(victim_ids));
                 if (!placement.success) {
                     return;
                 }
@@ -930,8 +942,7 @@ ScheduleResult Scheduler::try_schedule_job(Job& job) {
 
     ScheduleResult placed;
     if (quota_ok) {
-        placed = strategy_->try_place(
-            cluster_, PlaceRequest{job.gpu_request, job.parallelism}, has_running_jobs());
+        placed = strategy_->try_place(cluster_, place_request_for(job), has_running_jobs());
         if (placed.success) {
             apply_placement(job, placed);
             return placed;
@@ -967,6 +978,21 @@ void Scheduler::apply_placement(Job& job, const ScheduleResult& result) {
     job.reason = result.reason;
     job.start_time = time_;
     job.wait_time += std::max(0, time_ - job.pending_since);
+}
+
+bool Scheduler::should_relax_locality(const Job& job) const {
+    if (locality_timeout_ <= 0) {
+        return false;
+    }
+    return (time_ - job.pending_since) >= locality_timeout_;
+}
+
+PlaceRequest Scheduler::place_request_for(const Job& job) const {
+    PlaceRequest req;
+    req.gpu_request = job.gpu_request;
+    req.parallelism = job.parallelism;
+    req.relax_locality = should_relax_locality(job);
+    return req;
 }
 
 JobView Scheduler::to_view(const Job& job) const {
@@ -1090,6 +1116,7 @@ Snapshot Scheduler::snapshot() const {
     Snapshot s;
     s.time = time_;
     s.strategy = strategy_name_;
+    s.locality_timeout = locality_timeout_;
     s.nodes = cluster_.view();
     s.jobs.reserve(jobs_.size());
     for (const auto& job : jobs_) {

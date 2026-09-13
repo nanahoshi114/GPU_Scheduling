@@ -58,6 +58,7 @@ _FIELD_LABELS = {
     "id": "名称",
     "nodes": "节点",
     "queues": "队列",
+    "locality_timeout": "本地性超时",
 }
 
 
@@ -128,6 +129,8 @@ def _friendly_exc(exc: BaseException) -> str:
         return f"节点 id 重复: {suffix}" if suffix else "节点 id 重复"
     if "queue id 不能为空" in msg:
         return "队列名称不能为空"
+    if "locality_timeout" in msg:
+        return "本地性超时必须为非负整数（0 表示永不放松）"
     return msg or "请求失败，请检查输入或稍后重试"
 
 
@@ -174,6 +177,7 @@ class SessionRequest(BaseModel):
     strategy: str = "topology_aware"
     enable_preemption: bool = True
     queues: Optional[list[QueueSpec]] = None
+    locality_timeout: int = Field(default=0, ge=0)
 
 
 class JobRequest(BaseModel):
@@ -192,6 +196,7 @@ class CompareRequest(BaseModel):
     jobs_id: Optional[str] = None
     enable_preemption: bool = True
     queues: Optional[list[QueueSpec]] = None
+    locality_timeout: int = Field(default=0, ge=0)
 
 
 def _node_dicts(nodes: list[NodeSpec]) -> list[dict[str, Any]]:
@@ -288,7 +293,11 @@ def api_session(req: SessionRequest) -> dict[str, Any]:
     nodes = _node_dicts(req.nodes)
     try:
         sched = gs.Scheduler(
-            nodes, req.strategy, req.enable_preemption, _queue_tuples(req.queues)
+            nodes,
+            req.strategy,
+            req.enable_preemption,
+            _queue_tuples(req.queues),
+            locality_timeout=req.locality_timeout,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=_friendly_exc(exc)) from exc
@@ -341,8 +350,17 @@ def api_compare(req: CompareRequest) -> dict[str, Any]:
     jobs = _job_list(req)
     queues = _compare_queues(req)
     try:
-        ff = gs.simulate(nodes, jobs, "first_fit", req.enable_preemption, queues)
-        ta = gs.simulate(nodes, jobs, "topology_aware", req.enable_preemption, queues)
+        ff = gs.simulate(
+            nodes, jobs, "first_fit", req.enable_preemption, queues, req.locality_timeout
+        )
+        ta = gs.simulate(
+            nodes,
+            jobs,
+            "topology_aware",
+            req.enable_preemption,
+            queues,
+            req.locality_timeout,
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=_friendly_exc(exc)) from exc
     return {

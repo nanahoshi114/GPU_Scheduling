@@ -71,6 +71,7 @@ py::dict snapshot_to_dict(const Snapshot& s) {
     py::dict d;
     d["time"] = s.time;
     d["strategy"] = s.strategy;
+    d["locality_timeout"] = s.locality_timeout;
     py::list nodes;
     for (const auto& n : s.nodes) {
         py::dict nd;
@@ -229,12 +230,13 @@ PYBIND11_MODULE(gpu_scheduler, m) {
 
     py::class_<Scheduler>(m, "Scheduler")
         .def(py::init([](py::object nodes, const std::string& strategy,
-                         bool enable_preemption, py::object queues) {
+                         bool enable_preemption, py::object queues, int locality_timeout) {
                  return Scheduler(parse_nodes(nodes), strategy, enable_preemption,
-                                  parse_queues(queues));
+                                  parse_queues(queues), locality_timeout);
              }),
              py::arg("nodes"), py::arg("strategy") = "topology_aware",
-             py::arg("enable_preemption") = true, py::arg("queues") = py::none())
+             py::arg("enable_preemption") = true, py::arg("queues") = py::none(),
+             py::arg("locality_timeout") = 0)
         .def(
             "submit",
             [](Scheduler& self, py::object job_or_id, py::object gpu_request = py::none(),
@@ -268,21 +270,24 @@ PYBIND11_MODULE(gpu_scheduler, m) {
         .def("metrics", [](const Scheduler& self) { return metrics_to_dict(self.metrics()); })
         .def_property_readonly("time", &Scheduler::current_time)
         .def_property_readonly("strategy", &Scheduler::strategy_name)
-        .def_property_readonly("preemption_enabled", &Scheduler::preemption_enabled);
+        .def_property_readonly("preemption_enabled", &Scheduler::preemption_enabled)
+        .def_property_readonly("locality_timeout", &Scheduler::locality_timeout);
 
     m.def(
         "simulate",
         [](py::object nodes, py::iterable jobs, const std::string& strategy,
-           bool enable_preemption, py::object queues) {
+           bool enable_preemption, py::object queues, int locality_timeout) {
             std::vector<JobSpec> specs;
             for (auto item : jobs) {
                 specs.push_back(parse_job_spec(item.cast<py::dict>(), 0));
             }
-            return simulation_to_dict(Simulator::run(
-                parse_nodes(nodes), specs, strategy, enable_preemption, parse_queues(queues)));
+            return simulation_to_dict(Simulator::run(parse_nodes(nodes), specs, strategy,
+                                                    enable_preemption, parse_queues(queues),
+                                                    locality_timeout));
         },
         py::arg("nodes"), py::arg("jobs"), py::arg("strategy"),
-        py::arg("enable_preemption") = true, py::arg("queues") = py::none());
+        py::arg("enable_preemption") = true, py::arg("queues") = py::none(),
+        py::arg("locality_timeout") = 0);
 
     m.def("strategies", []() {
         py::list names;

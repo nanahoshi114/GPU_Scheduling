@@ -23,6 +23,14 @@ function fmtNum(x) {
   return Number.isInteger(x) ? String(x) : x.toFixed(2);
 }
 
+function localityTimeoutFrom(id) {
+  const el = $(id);
+  if (!el) return 0;
+  const n = Number(el.value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
 function nvlinkLabel(node, indices) {
   if (!node || !node.gpus) return "";
   const groups = [
@@ -50,6 +58,7 @@ const FIELD_LABELS = {
   gpu_request: "申请 GPU 数",
   duration: "运行时长",
   priority: "优先级",
+  locality_timeout: "本地性超时",
   id: "名称",
 };
 
@@ -672,6 +681,7 @@ $("#create-session").addEventListener("click", async () => {
         nodes: nodeRows,
         strategy: $("#strategy").value,
         enable_preemption: $("#enable-preemption").checked,
+        locality_timeout: localityTimeoutFrom("#locality-timeout"),
         queues: queueRows,
       }),
     });
@@ -738,6 +748,7 @@ $("#run-compare").addEventListener("click", async () => {
         cluster_id: clusterId,
         jobs_id: jobsId,
         enable_preemption: $("#cmp-preemption").checked,
+        locality_timeout: localityTimeoutFrom("#cmp-locality-timeout"),
       }),
     });
     if (visualize) {

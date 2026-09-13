@@ -9,8 +9,10 @@ SimulationResult Simulator::run(std::vector<NodeInit> nodes,
                                 const std::vector<JobSpec>& jobs,
                                 const std::string& strategy,
                                 bool enable_preemption,
-                                std::vector<QueueSpec> queues) {
-    Scheduler sched(std::move(nodes), strategy, enable_preemption, std::move(queues));
+                                std::vector<QueueSpec> queues,
+                                int locality_timeout) {
+    Scheduler sched(std::move(nodes), strategy, enable_preemption, std::move(queues),
+                    locality_timeout);
 
     std::vector<JobSpec> remaining = jobs;
     std::sort(remaining.begin(), remaining.end(), [](const JobSpec& a, const JobSpec& b) {
@@ -41,6 +43,24 @@ SimulationResult Simulator::run(std::vector<NodeInit> nodes,
         return t;
     };
 
+    auto earliest_locality_timeout = [&]() {
+        const int limit = sched.locality_timeout();
+        if (limit <= 0) {
+            return kInf;
+        }
+        int t = kInf;
+        for (const auto& job : sched.jobs()) {
+            if (job.state != JobState::Pending && job.state != JobState::Preempted) {
+                continue;
+            }
+            const int due = job.pending_since + limit;
+            if (due > time) {
+                t = std::min(t, due);
+            }
+        }
+        return t;
+    };
+
     auto record = [&]() {
         Snapshot snap = sched.snapshot();
         max_pending = std::max(max_pending, snap.metrics.pending_count);
@@ -61,10 +81,11 @@ SimulationResult Simulator::run(std::vector<NodeInit> nodes,
         const int next_arr =
             next_arrival < remaining.size() ? remaining[next_arrival].arrival_time : kInf;
         const int next_fin = earliest_finish();
-        if (next_arr == kInf && next_fin == kInf) {
+        const int next_timeout = earliest_locality_timeout();
+        if (next_arr == kInf && next_fin == kInf && next_timeout == kInf) {
             break;
         }
-        const int t = std::min(next_arr, next_fin);
+        const int t = std::min(next_arr, std::min(next_fin, next_timeout));
         if (t > time) {
             used_integral += static_cast<long long>(sched.used_gpus()) * (t - time);
             time = t;

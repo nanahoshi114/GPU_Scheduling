@@ -50,6 +50,7 @@ struct QueueView {
 struct PlaceRequest {
     int gpu_request = 0;
     std::string parallelism = "dp";  // dp | tp | pp
+    bool relax_locality = false;     // DP 超时后允许跨 Node / 跨 NVLink 组
 };
 
 struct JobSpec {
@@ -145,6 +146,7 @@ struct Metrics {
 struct Snapshot {
     int time = 0;
     std::string strategy;
+    int locality_timeout = 0;
     std::vector<NodeView> nodes;
     std::vector<JobView> jobs;
     std::vector<QueueView> queues;

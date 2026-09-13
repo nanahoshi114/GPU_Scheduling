@@ -650,3 +650,95 @@ def test_unknown_parallelism_is_rejected():
     assert result["success"] is False
     assert "未知并行方式" in result["reason"]
     assert sched.snapshot()["jobs"] == []
+
+
+def test_negative_locality_timeout_raises():
+    with pytest.raises(Exception, match="locality_timeout"):
+        gs.Scheduler([("A", 8)], "topology_aware", locality_timeout=-1)
+
+
+def test_locality_timeout_zero_keeps_waiting():
+    nodes = [("A", 8), ("B", 8), ("C", 8), ("D", 8)]
+    sched = gs.Scheduler(nodes, "topology_aware", locality_timeout=0)
+    for node in "ABCD":
+        assert sched.submit(f"fill-{node}", 6, duration=20)["success"]
+    assert sched.submit("wide", 8, duration=10)["success"] is False
+    for _ in range(5):
+        sched.tick()
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["wide"]["state"] == "pending"
+    assert sched.snapshot()["locality_timeout"] == 0
+
+
+def test_locality_timeout_spreads_after_wait():
+    nodes = [("A", 8), ("B", 8), ("C", 8), ("D", 8)]
+    sched = gs.Scheduler(nodes, "topology_aware", locality_timeout=3)
+    for node in "ABCD":
+        assert sched.submit(f"fill-{node}", 6, duration=20)["success"]
+    assert sched.submit("wide", 8, duration=10)["success"] is False
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["wide"]["state"] == "pending"
+
+    sched.tick()
+    sched.tick()
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["wide"]["state"] == "pending"
+
+    snap = sched.tick()
+    jobs = {j["id"]: j for j in snap["jobs"]}
+    assert jobs["wide"]["state"] == "running"
+    assert jobs["wide"]["nodes_used"] > 1
+    assert "超时" in jobs["wide"]["reason"]
+    assert "跨 Node" in jobs["wide"]["reason"]
+    assert snap["locality_timeout"] == 3
+
+
+def test_locality_timeout_allows_intra_nvlink_spread():
+    sched = gs.Scheduler(DUAL_A, "topology_aware", locality_timeout=3)
+    assert sched.submit("a", 2, duration=20)["success"]
+    assert sched.submit("b", 2, duration=20)["success"]
+    result = sched.submit("train", 4, duration=10)
+    assert result["success"] is False
+    assert "机内碎片" in result["reason"]
+
+    sched.tick()
+    sched.tick()
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["train"]["state"] == "pending"
+
+    snap = sched.tick()
+    jobs = {j["id"]: j for j in snap["jobs"]}
+    assert jobs["train"]["state"] == "running"
+    assert set(jobs["train"]["placement"][0]["gpu_indices"]) == {2, 3, 6, 7}
+    assert "超时" in jobs["train"]["reason"]
+    assert "NVLink" in jobs["train"]["reason"]
+    assert snap["metrics"]["cross_nvlink_jobs"] == 1
+
+
+def test_locality_timeout_does_not_relax_tp():
+    sched = gs.Scheduler(DUAL_A, "topology_aware", locality_timeout=3)
+    assert sched.submit("a", 2, duration=20)["success"]
+    assert sched.submit("b", 2, duration=20)["success"]
+    result = sched.submit("train", 4, duration=10, parallelism="tp")
+    assert result["success"] is False
+    assert "NVLink" in result["reason"]
+
+    for _ in range(5):
+        sched.tick()
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["train"]["state"] == "pending"
+    assert "NVLink" in jobs["train"]["reason"]
+
+
+def test_simulate_wakes_on_locality_timeout():
+    nodes = [{"id": n, "gpu_count": 8} for n in "ABCD"]
+    jobs = [{"id": f"fill-{n}", "gpu_request": 6, "arrival_time": 0, "duration": 20} for n in "ABCD"]
+    jobs.append({"id": "wide", "gpu_request": 8, "arrival_time": 0, "duration": 10})
+    off = gs.simulate(nodes, jobs, "topology_aware", locality_timeout=0)
+    on = gs.simulate(nodes, jobs, "topology_aware", locality_timeout=3)
+    by_off = {j["id"]: j for j in off["final_snapshot"]["jobs"]}
+    by_on = {j["id"]: j for j in on["final_snapshot"]["jobs"]}
+    assert by_off["wide"]["nodes_used"] == 1
+    assert by_on["wide"]["nodes_used"] > 1
+    assert "超时" in by_on["wide"]["reason"]
+    assert on["final_snapshot"]["locality_timeout"] == 3
