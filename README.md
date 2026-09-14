@@ -18,11 +18,15 @@
 - 指标：GPU 利用率、等待任务数 / 平均等待时间、跨 Node / 跨 NVLink / 跨 NUMA 任务数、抢占次数、公平份额 / 碎片等待
 - 同一组任务对比两种策略
 
+
+
 ## 环境要求
 
 - Python 3.9+
 - C++17 编译器（macOS 上的 `clang++` 即可）
 - CMake 作为 pip 构建依赖自动安装，不必预先配置系统 CMake
+
+
 
 ## 运行方式
 
@@ -88,21 +92,26 @@ print(gs.simulate(nodes, [
 # Topology-aware 可设 locality_timeout=N：DP 等满 N tick 后允许跨 Node / 跨 NVLink 组（0=永不）
 ```
 
+
+
 ## 预设数据
 
-| 文件 | 说明 |
-| --- | --- |
-| [data/cluster_4x8.json](data/cluster_4x8.json) | 4 台 × 8 GPU，共 32 卡（题目示例，拓扑 `flat`） |
+
+| 文件                                                                 | 说明                                               |
+| ------------------------------------------------------------------ | ------------------------------------------------ |
+| [data/cluster_4x8.json](data/cluster_4x8.json)                     | 4 台 × 8 GPU，共 32 卡（题目示例，拓扑 `flat`）               |
 | [data/cluster_4x8_dual_numa.json](data/cluster_4x8_dual_numa.json) | 4 台 × 8 GPU，每台 `dual_numa8`（0–3 / 4–7 两组 NVLink） |
-| [data/cluster_mixed.json](data/cluster_mixed.json) | 4 台 8 GPU + 2 台 4 GPU，共 40 卡 |
-| [data/cluster_philly.json](data/cluster_philly.json) | Philly 机器列表缩放到 8×8 + 4×2，共 72 卡 |
-| [data/jobs_20.json](data/jobs_20.json) | 20 个任务，混合 1/2/4/8 卡，错开到达与时长 |
-| [data/jobs_100.json](data/jobs_100.json) | 100 个混合训练任务，用于较长压力模拟 |
-| [data/jobs_priority.json](data/jobs_priority.json) | 低优先级长任务先占满集群，演示抢占与恢复 |
-| [data/jobs_quota.json](data/jobs_quota.json) | research 16 / prod 12 / default 4，演示公平份额等待与队内抢占 |
-| [data/jobs_nvlink.json](data/jobs_nvlink.json) | 12 个 1/2/4 卡任务，先占 GPU 0–1，对比 FF 跨组 vs TA 整组 |
-| [data/jobs_parallel.json](data/jobs_parallel.json) | DP / TP / PP 混合：TP 整组、PP 相邻节点、DP 碎片等待 |
-| [data/jobs_philly.json](data/jobs_philly.json) | Philly ATC’19 真实作业抽样 200 个（15 分钟/tick，带原 VC 队列） |
+| [data/cluster_mixed.json](data/cluster_mixed.json)                 | 4 台 8 GPU + 2 台 4 GPU，共 40 卡                     |
+| [data/cluster_philly.json](data/cluster_philly.json)               | Philly 机器列表缩放到 8×8 + 4×2，共 72 卡                  |
+| [data/jobs_20.json](data/jobs_20.json)                             | 20 个任务，混合 1/2/4/8 卡，错开到达与时长                      |
+| [data/jobs_fragment.json](data/jobs_fragment.json)                 | 碎片陷阱：t=0 四个 6 卡长任务，t=1 一个 8 卡                    |
+| [data/jobs_100.json](data/jobs_100.json)                           | 100 个混合训练任务，用于较长压力模拟                             |
+| [data/jobs_priority.json](data/jobs_priority.json)                 | 低优先级长任务先占满集群，演示抢占与恢复                             |
+| [data/jobs_quota.json](data/jobs_quota.json)                       | research 16 / prod 12 / default 4，演示公平份额等待与队内抢占  |
+| [data/jobs_nvlink.json](data/jobs_nvlink.json)                     | 12 个 1/2/4 卡任务，先占 GPU 0–1，对比 FF 跨组 vs TA 整组      |
+| [data/jobs_parallel.json](data/jobs_parallel.json)                 | DP / TP / PP 混合：TP 整组、PP 相邻节点、DP 碎片等待            |
+| [data/jobs_philly.json](data/jobs_philly.json)                     | Philly ATC’19 真实作业抽样 200 个（15 分钟/tick，带原 VC 队列）  |
+
 
 从 [Philly traces](https://github.com/msr-fiddle/philly-traces) 重新生成抽样：
 
@@ -121,6 +130,8 @@ python3 scripts/convert_philly.py
 
 ## 核心设计
 
+
+
 ### 模型
 
 - 集群由若干 Node 组成，每个 Node 含固定数量的同质 GPU，并可带机内拓扑预设
@@ -131,11 +142,15 @@ python3 scripts/convert_philly.py
 
 拓扑预设：
 
-| 预设 | 标签 |
-| --- | --- |
-| 空 / `flat` / `nvswitch8` | 全部 `group=0, numa=0` |
-| `dual_numa8` | GPU 0–3：numa0/group0；4–7：numa1/group1 |
-| `pair4` | 0–1 一组、2–3 一组（给异构 4 卡机） |
+
+| 预设                       | 标签                                    |
+| ------------------------ | ------------------------------------- |
+| 空 / `flat` / `nvswitch8` | 全部 `group=0, numa=0`                  |
+| `dual_numa8`             | GPU 0–3：numa0/group0；4–7：numa1/group1 |
+| `pair4`                  | 0–1 一组、2–3 一组（给异构 4 卡机）               |
+
+
+
 
 ### First Fit
 
@@ -153,7 +168,7 @@ python3 scripts/convert_philly.py
 2. 按各 Node 空闲数求当前最少跨 Node 数
 3. 在恰好该节点数的可行组合中打分，选最低分：
 
-<p align="center"><code>score = 100 · (n<sub>nodes</sub> − 1) + 40 · (n<sub>nvlink</sub> − 1) + 15 · (n<sub>numa</sub> − 1) + 10 · n<sub>frag</sub> + 5 · n<sub>awkward</sub></code></p>
+`score = 100 · (nnodes − 1) + 40 · (nnvlink − 1) + 15 · (nnuma − 1) + 10 · nfrag + 5 · nawkward`
 
 - 跨 Node 权重必须最大：2 节点同组一定差于 1 节点跨 NUMA
 - `n_nvlink` / `n_numa`：本次放置覆盖的 `(node_id, group)` / `(node_id, numa)` 个数
@@ -161,17 +176,19 @@ python3 scripts/convert_philly.py
 - awkward 余量：剩余 GPU 落在 3/5/6/7 的惩罚
 - 节点之间仍按空闲从大到小填；节点内先吃满一个 NVLink 组，再同 NUMA 下一组，最后才跨 NUMA
 
-4. **跨 Node 碎片等待**：理想节点数为「向上取整（G / 单 Node 容量）」。若当前最少跨 Node 数大于理想值，且仍有 running 任务，则暂不调度；若没有 running 则降级放置，避免死锁
-5. **机内碎片等待**（仅理想节点数为 1 的 2/4 卡）：`ideal_nvlink = ceil(本机拿卡数 / 该机最大组容量)`。已能在 1 节点放下，但每个候选都不得不跨组，且有 running → pending；无 running → 降级跨组。`dual_numa8` 上 8 卡 `ideal_nvlink=2`，**不要等**
-6. **本地性超时**（可选，默认 0 = 永不放松）：DP 在本段等待（`time - pending_since`）达到 `locality_timeout` 个 tick 后，关闭上面两扇等待门，允许跨 Node / 跨 NVLink 组降级放置（Philly 式 soft constraint）。TP 仍必须同一 NVLink 组。First Fit 忽略该参数。构造：`Scheduler(..., locality_timeout=3)`；Web 交互页 / 对比页可填。离散事件模拟会在超时时刻唤醒，不会直接跳到任务结束。下面五场景表均按默认 0 统计
+1. **跨 Node 碎片等待**：理想节点数为「向上取整（G / 单 Node 容量）」。若当前最少跨 Node 数大于理想值，且仍有 running 任务，则暂不调度；若没有 running 则降级放置，避免死锁
+2. **机内碎片等待**（仅理想节点数为 1 的 2/4 卡）：`ideal_nvlink = ceil(本机拿卡数 / 该机最大组容量)`。已能在 1 节点放下，但每个候选都不得不跨组，且有 running → pending；无 running → 降级跨组。`dual_numa8` 上 8 卡 `ideal_nvlink=2`，**不要等**
+3. **本地性超时**（可选，默认 0 = 永不放松）：DP 在本段等待（`time - pending_since`）达到 `locality_timeout` 个 tick 后，关闭上面两扇等待门，允许跨 Node / 跨 NVLink 组降级放置（Philly 式 soft constraint）。TP 仍必须同一 NVLink 组。First Fit 忽略该参数。构造：`Scheduler(..., locality_timeout=3)`；Web 交互页 / 对比页可填。离散事件模拟会在超时时刻唤醒，不会直接跳到任务结束。下面五场景表均按默认 0 统计
 
 作业可声明并行方式（缺省 `dp`），Topology-aware 按通信模式对齐已有 Node / NVLink 域；First Fit 仍忽略该字段。
 
-| 模式 | 通信 | Topology-aware 放置 |
-| --- | --- | --- |
-| `dp` | 梯度同步，可重叠 | 上表原样：最少节点、跨 Node / 机内碎片等待 |
+
+| 模式   | 通信           | Topology-aware 放置                                                                        |
+| ---- | ------------ | ---------------------------------------------------------------------------------------- |
+| `dp` | 梯度同步，可重叠     | 上表原样：最少节点、跨 Node / 机内碎片等待                                                                |
 | `tp` | 每步 AllReduce | **硬约束**：G 张卡落在同一个 NVLink 组；`G` 大于全集群最大组容量则提交失败；组被占满且有 running → `TP 需同一 NVLink 组，等待同组空出` |
-| `pp` | stage 点对点 | 允许跨 Node，但占用节点必须是集群定义顺序上的**连续窗口**；**不**因 `min_nodes > ideal_nodes` 等待。两台相邻半满机对流水线合法 |
+| `pp` | stage 点对点    | 允许跨 Node，但占用节点必须是集群定义顺序上的**连续窗口**；**不**因 `min_nodes > ideal_nodes` 等待。两台相邻半满机对流水线合法      |
+
 
 对照：四台 `dual_numa8` 各被占住一部分、没有任何一台剩满 8 卡时，DP-8 等待整机；PP-8 立刻放在相邻两台；TP-8 因组容量 4 直接拒绝。空闲组够 4 卡时，TP-4 整组放入，而 First Fit 可跨组。
 
@@ -229,32 +246,36 @@ Web 交互页可编辑队列，或一键填入演示配额 `research 16 / prod 1
 
 用同一组任务分别跑 First Fit 与 Topology-aware。下面五个场景覆盖轻度混合、异构、碎片陷阱、高压长负载，以及 Philly 真实作业抽样。数字来自 `gs.simulate`（与 Web「策略对比」同一套结果）。
 
-| 场景 | 策略 | 时间平均 GPU 利用率 | 平均等待 | 跨 Node 任务 | Makespan |
-| --- | --- | ---: | ---: | ---: | ---: |
-| 1. 同构 32 卡 + 20 混合任务 | First Fit | 73.4% | 3.85 | 1 | 45 |
-|  | Topology-aware | 73.4% | 3.85 | **0** | 45 |
-| 2. 异构 40 卡 + 20 混合任务 | First Fit | 75.5% | 2.25 | 2 | 35 |
-|  | Topology-aware | 75.5% | 2.25 | **0** | 35 |
-| 3. 同构 32 卡 + 碎片陷阱 | First Fit | **87.5%** | **0.00** | 2 | **20** |
-|  | Topology-aware | 58.3% | 3.80 | **0** | 30 |
-| 4. 异构 40 卡 + 100 混合任务 | First Fit | **92.7%** | **25.55** | 21 | **140** |
-|  | Topology-aware | 87.7% | 26.33 | **0** | 148 |
-| 5. Philly 72 卡 + 200 真实作业 | First Fit | 53.9% | 7.00 | 73 | 122 |
-|  | Topology-aware | 53.9% | 7.01 | **0** | 122 |
 
-场景 1 / 2 用 [data/jobs_20.json](data/jobs_20.json)；场景 4 用 [data/jobs_100.json](data/jobs_100.json)；场景 5 用 [data/cluster_philly.json](data/cluster_philly.json) + [data/jobs_philly.json](data/jobs_philly.json)（原 VC 队列一并加载）；场景 3 为构造负载：t=0 提交 4 个 6 卡长任务，t=1 再提交 1 个 8 卡任务。Web 对比页可复现 1、2、4、5。
+| 场景                        | 策略             | 时间平均 GPU 利用率 | 平均等待      | 跨 Node 任务 | Makespan |
+| ------------------------- | -------------- | ------------ | --------- | --------- | -------- |
+| 1. 同构 32 卡 + 20 混合任务      | First Fit      | 73.4%        | 3.85      | 1         | 45       |
+|                           | Topology-aware | 73.4%        | 3.85      | **0**     | 45       |
+| 2. 异构 40 卡 + 20 混合任务      | First Fit      | 75.5%        | 2.25      | 2         | 35       |
+|                           | Topology-aware | 75.5%        | 2.25      | **0**     | 35       |
+| 3. 同构 32 卡 + 碎片陷阱         | First Fit      | **87.5%**    | **0.00**  | 2         | **20**   |
+|                           | Topology-aware | 58.3%        | 3.80      | **0**     | 30       |
+| 4. 异构 40 卡 + 100 混合任务     | First Fit      | **92.7%**    | **25.55** | 21        | **140**  |
+|                           | Topology-aware | 87.7%        | 26.33     | **0**     | 148      |
+| 5. Philly 72 卡 + 200 真实作业 | First Fit      | 53.9%        | 7.00      | 73        | 122      |
+|                           | Topology-aware | 53.9%        | 7.01      | **0**     | 122      |
+
+
+场景 1 / 2 用 [data/jobs_20.json](data/jobs_20.json)；场景 3 用 [data/cluster_4x8.json](data/cluster_4x8.json) + [data/jobs_fragment.json](data/jobs_fragment.json)；场景 4 用 [data/jobs_100.json](data/jobs_100.json)；场景 5 用 [data/cluster_philly.json](data/cluster_philly.json) + [data/jobs_philly.json](data/jobs_philly.json)（原 VC 队列一并加载）。Web 对比页可复现全部五个场景。
 
 ### 各场景在说什么
 
-**1 / 2：轻度混合，Topology-aware 几乎零代价换通信。** 利用率、平均等待、makespan 两边一样，差别只在跨 Node：同构上 1→0，异构上 2→0。负载还没把碎片差打满，大任务往往还能等到整机，不必用利用率去换。
+**1 / 2：轻度混合，Topology-aware 几乎零代价换通信：** 利用率、平均等待、makespan 两边一样，差别只在跨 Node：同构上 1→0，异构上 2→0。负载还没把碎片差打满，大任务往往还能等到整机，不必用利用率去换。
 
-**3：碎片陷阱，两种策略目标相反。** 四台各被 6 卡占住时，8 卡任务的理想节点数是 1。Topology-aware 判定当前最少要跨 4 台，选择等待，t=20 第一台释放后再整机放入；代价是利用率从 87.5% 掉到 58.3%，makespan 20→30。First Fit 则立刻把后续 6 卡任务塞进前几台的 2 卡余量（这些 6 卡任务自己变成跨 Node），反而空出一台整机给 8 卡任务——等得短、卡更满，但通信更差。
+**3：碎片陷阱：** 四台各被 6 卡占住时，8 卡任务的理想节点数是 1。Topology-aware 判定当前最少要跨 4 台，选择等待，t=20 第一台释放后再整机放入；代价是利用率从 87.5% 掉到 58.3%，makespan 20→30。First Fit 则立刻把后续 6 卡任务塞进前几台的 2 卡余量（这些 6 卡任务自己变成跨 Node），反而空出一台整机给 8 卡任务——等得短、卡更满，但通信更差。
 
 微观对照同一逻辑：先占某节点 4 卡，再提交 8 卡。First Fit 用「A 的 4 卡剩余 + B 的 4 卡」立刻拆开；Topology-aware 把 8 卡整段落到仍空闲的节点上。两边等待都是 0，只有放置形状不同。
 
-**4：高压异构，权衡才浮出水面。** 100 个 1/2/4/8 卡任务连续到达时，First Fit 利用率 92.7%、makespan 140，但有 21 个跨 Node 任务；Topology-aware 把跨 Node 压到 0，利用率降到 87.7%，平均等待多 0.78，makespan 多 8。这是典型的 **locality vs fragmentation delay**（Philly）：等更好的打包，通信变好，排队和空转变多。
+将locality_timeout设为 5 ticks，8 卡任务在等待 5 ticks 后，等待超时，允许跨 Node 放置；最终平均 GPU 利用率和 First Fit 一致，并且仍保持跨 Node 任务更少的优势 （2对比1）
 
-**5：Philly 真实抽样，配额先卡住，本地性几乎免费。** 集群是 8 台 8 GPU + 4 台 2 GPU（72 卡，真实机器 id）；作业是 ATC’19 日志里 12 小时最密窗口的 200 条抽样，时间按 15 分钟/tick 压缩（到达跨度 47 tick）。GPU 配比 1/2/4/8 = 97/13/45/45，其中 142 个任务时长只有 1 tick；`queue_id` 沿用原 VC，配额合计 72，多个 VC 只有 8 卡，8 卡作业必须在队内串行。
+**4：高压异构：** 100 个 1/2/4/8 卡任务连续到达时，First Fit 利用率 92.7%、makespan 140，但有 21 个跨 Node 任务；Topology-aware 把跨 Node 压到 0，利用率降到 87.7%，平均等待多 0.78，makespan 多 8。这是典型的 **locality vs fragmentation delay**（Philly）：等更好的打包，通信变好，排队和空转变多。
+
+**5：Philly 真实抽样：** 集群是 8 台 8 GPU + 4 台 2 GPU（72 卡，真实机器 id）；作业是 ATC’19 日志里 12 小时最密窗口的 200 条抽样，时间按 15 分钟/tick 压缩（到达跨度 47 tick）。GPU 配比 1/2/4/8 = 97/13/45/45，其中 142 个任务时长只有 1 tick；`queue_id` 沿用原 VC，配额合计 72，多个 VC 只有 8 卡，8 卡作业必须在队内串行。
 
 两边时间平均利用率都是 53.9%、makespan 都是 122——利用率被需求钉死（4735 GPU·tick / 8784），不是策略钉死。平均等待 7.00 vs 7.01，200 个任务里只有 2 个 8 卡作业差 1 tick。等待峰值 38 几乎全是 **fair-share**：VC 配额先满，集群里别的队列还有空位。Topology-aware 的 fragmentation pending 只在 1 个 tick 上冒到 2，First Fit 全程为 0。
 
@@ -262,12 +283,16 @@ Web 交互页可编辑队列，或一键填入演示配额 `research 16 / prod 1
 
 ### 差异小结
 
-| | First Fit | Topology-aware |
-| --- | --- | --- |
-| 放置时机 | 空闲总量够就立刻放 | 跨 Node 多于理想值且仍有 running 时先等 |
-| 通信 | 容易吃碎片、拆大任务 | 优先最少节点，跨 Node 在五个场景里都不高于 FF |
-| 利用率 / 等待 | 轻度 / 真实抽样与 TA 持平；碎片和高压时更高、更短 | 轻度 / 真实抽样持平；碎片陷阱和高压时更低、更长 |
-| 异构 | 2/4 卡机与 8 卡机混用时更容易跨机拼卡 | 更倾向整机/少节点，空出的小机不一定马上被大任务用掉 |
+
+|          | First Fit                    | Topology-aware              |
+| -------- | ---------------------------- | --------------------------- |
+| 放置时机     | 空闲总量够就立刻放                    | 跨 Node 多于理想值且仍有 running 时先等 |
+| 通信       | 容易吃碎片、拆大任务                   | 优先最少节点，跨 Node 在五个场景里都不高于 FF |
+| 利用率 / 等待 | 轻度 / 真实抽样与 TA 持平；碎片和高压时更高、更短 | 轻度 / 真实抽样持平；碎片陷阱和高压时更低、更长   |
+| 异构       | 2/4 卡机与 8 卡机混用时更容易跨机拼卡       | 更倾向整机/少节点，空出的小机不一定马上被大任务用掉  |
+
+
+
 
 ### Topology-aware 的优势
 
@@ -276,15 +301,17 @@ Web 交互页可编辑队列，或一键填入演示配额 `research 16 / prod 1
 - **和放置策略正交。** 抢占仍走同一套 `try_place`，不会为了抢资源就绕过少跨 Node 的目标。
 - **轻度负载和真实抽样几乎没有副作用。** 场景 1 / 2 / 5 说明：碎片不严重、或配额先成为瓶颈时，等一下就能整机放入，利用率不用打折。
 
+
+
 ### Topology-aware 的劣势
 
 - **为本地性付排队和空转。** 场景 3 / 4：硬等待会让整机空着看大任务排队（Philly 的 fragmentation delay），First Fit 反而更高利用率、更短 makespan。场景 5 的真实抽样没有付这笔账——等待被 VC 配额主导，两种策略的利用率与 makespan 相同。
-- **默认不超时放松。** `locality_timeout=0` 时只要还有 running 就坚持 \(k^*\)。设成正数后，DP 等满该 tick 数会降级跨机 / 跨组（对齐 Philly 的 2～3 分钟放松）；TP 仍不放松。五场景表按默认 0。
+- **默认不超时放松。** `locality_timeout=0` 时只要还有 running 就坚持 k^*。设成正数后，DP 等满该 tick 数会降级跨机 / 跨组（对齐 Philly 的 2～3 分钟放松）；TP 仍不放松。五场景表按默认 0。
 - **可能「等错了」。** 场景 3 里 First Fit 拆开 6 卡任务，歪打正着留出整机；Topology-aware 坚持一机一个 6 卡，8 卡任务多等一整段。Tiresias 的批评也在这里：永远压到最少机器会过度阻塞。
 - **搜索会截断。** 节点很多时只在最空闲的若干台上枚举组合，大规模集群上不是全局最优。
 - **不是 Megatron 三维网格。** 一个任务只选 DP / TP / PP 之一，不把 `tp×pp×dp` 拆成多层 rank，也不做通信矩阵 mapping。
 
-一句话：First Fit 是吞吐优先的即时装箱；Topology-aware 是通信优先的有界等待。碎片不重时后者近乎免费；碎片很重或任务很短时，打开 `locality_timeout` 或按通信量决定是否 consolidate（Tiresias / Philly）。
+总结：First Fit 是吞吐优先的即时装箱；Topology-aware 是通信优先的有界等待。碎片不重时后者近乎免费；碎片很重或任务很短时，打开 `locality_timeout` 或按通信量决定是否 consolidate（Tiresias / Philly）。
 
 ## 项目结构
 
@@ -295,6 +322,8 @@ data/                  集群与任务预设
 tests/                 调用扩展模块的 pytest
 ```
 
+
+
 ## 已知限制
 
 - 机内拓扑用预设域标签（`flat` / `nvswitch8` / `dual_numa8` / `pair4`），不读 NVML，也不模拟 NVLink 争用或 GPU 型号 / 显存
@@ -304,3 +333,4 @@ tests/                 调用扩展模块的 pytest
 - 未实现 Kubernetes / Volcano Scheduler Plugin
 - Topology-aware 的组合搜索在节点很多时会截断为最空闲的若干台，极端大规模集群上可能不是全局最优
 - 任务按整体抢占，不做部分 GPU 抢占或运行中迁移
+
