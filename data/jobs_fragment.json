@@ -1,0 +1,12 @@
+{
+  "id": "jobs_fragment",
+  "name": "碎片陷阱（4×6 卡 + 8 卡）",
+  "description": "t=0 四台各来一个 6 卡长任务，t=1 再来一个 8 卡。First Fit 把后续 6 卡塞进余量并跨 Node，空出整机给 8 卡；Topology-aware 一机一个 6 卡，8 卡等到 t=20 再整机放入。",
+  "jobs": [
+    {"id": "fill-A", "gpu_request": 6, "arrival_time": 0, "duration": 20, "priority": 0},
+    {"id": "fill-B", "gpu_request": 6, "arrival_time": 0, "duration": 20, "priority": 0},
+    {"id": "fill-C", "gpu_request": 6, "arrival_time": 0, "duration": 20, "priority": 0},
+    {"id": "fill-D", "gpu_request": 6, "arrival_time": 0, "duration": 20, "priority": 0},
+    {"id": "wide", "gpu_request": 8, "arrival_time": 1, "duration": 10, "priority": 0}
+  ]
+}
