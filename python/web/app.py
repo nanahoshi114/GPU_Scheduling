@@ -199,8 +199,20 @@ class CompareRequest(BaseModel):
     locality_timeout: int = Field(default=0, ge=0)
 
 
+_FIXED_TOPOLOGY_GPUS = {
+    "nvswitch8": 8,
+    "dual_numa8": 8,
+    "pair4": 4,
+}
+
+
 def _node_dicts(nodes: list[NodeSpec]) -> list[dict[str, Any]]:
-    return [{"id": n.id, "gpu_count": n.gpu_count, "topology": n.topology} for n in nodes]
+    out = []
+    for n in nodes:
+        topo = n.topology or "flat"
+        gpus = _FIXED_TOPOLOGY_GPUS.get(topo, n.gpu_count)
+        out.append({"id": n.id, "gpu_count": gpus, "topology": topo})
+    return out
 
 
 def _cluster_nodes(req: CompareRequest) -> list[dict[str, Any]]:

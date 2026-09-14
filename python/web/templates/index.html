@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GPU 拓扑感知调度器</title>
-  <link rel="stylesheet" href="/static/style.css?v=13" />
+  <link rel="stylesheet" href="/static/style.css?v=14" />
 </head>
 <body>
   <header class="top">
@@ -41,6 +41,7 @@
           </label>
           <p class="hint">Topology-aware 的 DP 等满该 tick 数后允许跨 Node / 跨 NVLink 组。0 表示永不放松。TP 不受影响。</p>
           <div id="node-editor" class="node-editor"></div>
+          <p class="hint">只有 flat 可自定 GPU 数。nvswitch8 / dual_numa8 固定 8 卡，pair4 固定 4 卡。</p>
           <div class="row">
             <button id="add-node" class="ghost">添加 Node</button>
             <button id="create-session" class="primary">创建 / 重置会话</button>
@@ -171,6 +172,6 @@
     </section>
   </main>
 
-  <script src="/static/app.js?v=13"></script>
+  <script src="/static/app.js?v=14"></script>
 </body>
 </html>

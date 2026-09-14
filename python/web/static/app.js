@@ -171,31 +171,55 @@ let queueRows = [];
 let sessionQueues = [];
 
 const TOPOLOGIES = ["flat", "nvswitch8", "dual_numa8", "pair4"];
+const TOPOLOGY_FIXED_GPUS = {
+  nvswitch8: 8,
+  dual_numa8: 8,
+  pair4: 4,
+};
+
+function topologyFixedGpus(topology) {
+  return TOPOLOGY_FIXED_GPUS[topology || "flat"] ?? null;
+}
+
+function syncNodeGpuCount(row) {
+  const fixed = topologyFixedGpus(row.topology);
+  if (fixed != null) row.gpu_count = fixed;
+  return row;
+}
 
 function renderNodeEditor() {
   const root = $("#node-editor");
   root.innerHTML = "";
   nodeRows.forEach((row, idx) => {
+    syncNodeGpuCount(row);
     const div = document.createElement("div");
     div.className = "node-row node-row-topo";
     const topo = row.topology || "flat";
+    const fixed = topologyFixedGpus(topo);
     const opts = TOPOLOGIES.map(
       (t) => `<option value="${t}" ${t === topo ? "selected" : ""}>${t}</option>`
     ).join("");
+    const gpuLock = fixed != null ? "disabled" : "";
+    const gpuTitle = fixed != null ? ` title="${topo} 固定 ${fixed} 卡，不可改数量"` : "";
     div.innerHTML = `
       <input data-k="id" value="${row.id}" />
-      <input data-k="gpu_count" type="number" min="1" value="${row.gpu_count}" />
+      <input data-k="gpu_count" type="number" min="1" value="${row.gpu_count}" ${gpuLock}${gpuTitle} />
       <select data-k="topology">${opts}</select>
       <button class="ghost" data-del="${idx}" title="删除">×</button>
     `;
     div.querySelector('[data-k="id"]').addEventListener("input", (e) => {
       nodeRows[idx].id = e.target.value;
     });
-    div.querySelector('[data-k="gpu_count"]').addEventListener("input", (e) => {
-      nodeRows[idx].gpu_count = Number(e.target.value);
-    });
+    const gpuInput = div.querySelector('[data-k="gpu_count"]');
+    if (fixed == null) {
+      gpuInput.addEventListener("input", (e) => {
+        nodeRows[idx].gpu_count = Number(e.target.value);
+      });
+    }
     div.querySelector('[data-k="topology"]').addEventListener("change", (e) => {
       nodeRows[idx].topology = e.target.value;
+      syncNodeGpuCount(nodeRows[idx]);
+      renderNodeEditor();
     });
     div.querySelector("[data-del]").addEventListener("click", () => {
       nodeRows.splice(idx, 1);
@@ -282,11 +306,13 @@ function renderQueueBars(queues, root = $("#queue-bars")) {
 function applyClusterPreset(id) {
   const c = presets.clusters.find((x) => x.id === id);
   if (!c) return;
-  nodeRows = c.nodes.map((n) => ({
-    id: n.id,
-    gpu_count: n.gpu_count,
-    topology: n.topology || "flat",
-  }));
+  nodeRows = c.nodes.map((n) =>
+    syncNodeGpuCount({
+      id: n.id,
+      gpu_count: n.gpu_count,
+      topology: n.topology || "flat",
+    })
+  );
   queueRows = defaultQueueRows();
   renderNodeEditor();
   renderQueueEditor();
