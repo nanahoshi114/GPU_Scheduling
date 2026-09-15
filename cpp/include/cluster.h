@@ -17,6 +17,8 @@ public:
     int used_gpus() const { return used_gpus_; }
     int free_gpus() const { return total_gpus_ - used_gpus_; }
     int max_node_capacity() const;
+    // Empty-cluster lower bound: fewest nodes whose physical sizes sum to >= gpu_request.
+    int min_nodes_for_request(int gpu_request) const;
     int node_count() const { return static_cast<int>(nodes_.size()); }
 
     const std::vector<Node>& nodes() const { return nodes_; }

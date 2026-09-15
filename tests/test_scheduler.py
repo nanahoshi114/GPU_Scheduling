@@ -84,6 +84,57 @@ def test_topology_aware_waits_on_fragmentation():
     assert jobs["wide"]["state"] == "pending"
 
 
+def test_ta_ideal_nodes_uses_mixed_capacities_not_max_only():
+    """1x8 + 3x4: 16-GPU needs 3 nodes even when empty; do not wait for impossible 2."""
+    nodes = [("A", 8), ("B", 4), ("C", 4), ("D", 4)]
+    sched = gs.Scheduler(nodes, "topology_aware")
+    four = sched.submit("four", 4, duration=20)
+    assert four["success"]
+    assert four["placement"][0]["node_id"] != "A"
+    assert len(four["placement"][0]["gpu_indices"]) == 4
+
+    wide = sched.submit("wide", 16, duration=10)
+    assert wide["success"]
+    assert len(wide["placement"]) == 3
+    node_ids = {p["node_id"] for p in wide["placement"]}
+    assert "A" in node_ids
+    assert sched.metrics()["pending_count"] == 0
+
+
+def test_ta_still_waits_when_empty_cluster_could_use_fewer_nodes():
+    """2x8 + 2x4: occupying one 8-GPU node makes 16-GPU need 3 now, but 2 after it finishes."""
+    nodes = [("A", 8), ("B", 8), ("C", 4), ("D", 4)]
+    sched = gs.Scheduler(nodes, "topology_aware")
+    hold = sched.submit("hold", 6, duration=20)
+    assert hold["success"]
+    assert hold["placement"][0]["node_id"] in ("A", "B")
+
+    wide = sched.submit("wide", 16, duration=10)
+    assert wide["success"] is False
+    assert "碎片" in wide["reason"] or "跨" in wide["reason"]
+    assert "理想 2" in wide["reason"]
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["wide"]["state"] == "pending"
+
+    victim = hold["placement"][0]["node_id"]
+    assert sched.finish("hold")
+    jobs = {j["id"]: j for j in sched.snapshot()["jobs"]}
+    assert jobs["wide"]["state"] == "running"
+    assert jobs["wide"]["nodes_used"] == 2
+    placed = {p["node_id"] for p in jobs["wide"]["placement"]}
+    assert placed == {"A", "B"}
+    assert victim in placed
+
+
+def test_ta_empty_mixed_cluster_places_16_on_three_nodes():
+    nodes = [("A", 8), ("B", 4), ("C", 4), ("D", 4)]
+    sched = gs.Scheduler(nodes, "topology_aware")
+    wide = sched.submit("wide", 16, duration=10)
+    assert wide["success"]
+    assert len(wide["placement"]) == 3
+    assert sum(len(p["gpu_indices"]) for p in wide["placement"]) == 16
+
+
 def test_topology_aware_prefers_single_node_over_leftover():
     nodes = [("A", 8), ("B", 8), ("C", 8), ("D", 8)]
     ff = gs.Scheduler(nodes, "first_fit")

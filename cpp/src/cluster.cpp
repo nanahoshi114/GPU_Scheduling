@@ -57,6 +57,31 @@ int Cluster::max_node_capacity() const {
     return m;
 }
 
+int Cluster::min_nodes_for_request(int gpu_request) const {
+    if (gpu_request <= 0) {
+        return 0;
+    }
+    std::vector<int> caps;
+    caps.reserve(nodes_.size());
+    for (const auto& node : nodes_) {
+        caps.push_back(static_cast<int>(node.gpus.size()));
+    }
+    std::sort(caps.begin(), caps.end(), [](int a, int b) { return a > b; });
+    int covered = 0;
+    int n = 0;
+    for (int cap : caps) {
+        if (covered >= gpu_request) {
+            break;
+        }
+        covered += cap;
+        ++n;
+    }
+    if (covered < gpu_request) {
+        return static_cast<int>(nodes_.size()) + 1;
+    }
+    return n;
+}
+
 int Cluster::node_index(const std::string& id) const {
     for (int i = 0; i < static_cast<int>(nodes_.size()); ++i) {
         if (nodes_[static_cast<size_t>(i)].id == id) {

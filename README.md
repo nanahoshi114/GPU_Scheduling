@@ -176,7 +176,7 @@ python3 scripts/convert_philly.py
 - awkward 余量：剩余 GPU 落在 3/5/6/7 的惩罚
 - 节点之间仍按空闲从大到小填；节点内先吃满一个 NVLink 组，再同 NUMA 下一组，最后才跨 NUMA
 
-1. **跨 Node 碎片等待**：理想节点数为「向上取整（G / 单 Node 容量）」。若当前最少跨 Node 数大于理想值，且仍有 running 任务，则暂不调度；若没有 running 则降级放置，避免死锁
+1. **跨 Node 碎片等待**：理想节点数是空集群下的结构下限——把各 Node 物理容量从大到小累加，直到 ≥ G。同构时等价于 `ceil(G / 单 Node 容量)`；异构时不会把「两台最大机加起来都不够」当成理想。若当前最少跨 Node 数大于该值，且仍有 running 任务，则暂不调度；若没有 running 则降级放置，避免死锁
 2. **机内碎片等待**（仅理想节点数为 1 的 2/4 卡）：`ideal_nvlink = ceil(本机拿卡数 / 该机最大组容量)`。已能在 1 节点放下，但每个候选都不得不跨组，且有 running → pending；无 running → 降级跨组。`dual_numa8` 上 8 卡 `ideal_nvlink=2`，**不要等**
 3. **本地性超时**（可选，默认 0 = 永不放松）：DP 在本段等待（`time - pending_since`）达到 `locality_timeout` 个 tick 后，关闭上面两扇等待门，允许跨 Node / 跨 NVLink 组降级放置（Philly 式 soft constraint）。TP 仍必须同一 NVLink 组。First Fit 忽略该参数。构造：`Scheduler(..., locality_timeout=3)`；Web 交互页 / 对比页可填。离散事件模拟会在超时时刻唤醒，不会直接跳到任务结束。下面五场景表均按默认 0 统计
 

@@ -354,8 +354,7 @@ private:
             return result;
         }
 
-        const int max_cap = std::max(1, cluster.max_node_capacity());
-        const int ideal_nodes = (gpu_request + max_cap - 1) / max_cap;
+        const int ideal_nodes = std::max(1, cluster.min_nodes_for_request(gpu_request));
         const bool wait_for_locality = has_running && !relax_locality;
 
         if (min_nodes > ideal_nodes && wait_for_locality) {
